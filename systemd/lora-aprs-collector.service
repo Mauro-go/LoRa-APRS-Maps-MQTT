@@ -1,0 +1,15 @@
+[Unit]
+Description=LoRa APRS Maps MQTT - MQTT Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lora-aprs/backend
+ExecStart=/usr/bin/python3 /opt/lora-aprs/backend/collector.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
