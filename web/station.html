@@ -1,0 +1,2130 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Stazione APRS - Dettaglio</title>
+
+<link
+    rel="stylesheet"
+    href="/aprs-symbols/aprs-symbols.css"
+>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #111;
+    color: #eee;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 15px;
+    background: #1b1b1b;
+    border-bottom: 1px solid #333;
+}
+
+.title {
+    font-size: 19px;
+    font-weight: bold;
+}
+
+.back {
+    color: white;
+    text-decoration: none;
+    padding: 6px 11px;
+    background: #333;
+    border-radius: 5px;
+    font-size: 13px;
+}
+
+.back:hover {
+    background: #444;
+}
+
+.container {
+    width: 100%;
+    max-width: 1100px;
+    margin: 12px auto;
+    padding: 0 12px;
+}
+
+.loading {
+    padding: 25px;
+    text-align: center;
+    color: #aaa;
+}
+
+.error {
+    padding: 18px;
+    background: #321818;
+    border-radius: 7px;
+    color: #ff7777;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+
+.station-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    background: #1d1d1d;
+    border-radius: 8px;
+}
+
+.station-symbol {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.station-symbol .aprs-symbol {
+    display: block;
+}
+
+.station-symbol .station-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 25px;
+    font-weight: bold;
+    line-height: 48px;
+    color: white;
+    text-shadow:
+        0 0 2px #000,
+        0 0 3px #000;
+    pointer-events: none;
+}
+
+.station-symbol .station-overlay.wx {
+    color: #008cff;
+}
+
+.station-name {
+    font-size: 23px;
+    font-weight: bold;
+}
+
+.station-subtitle {
+    margin-top: 2px;
+    color: #999;
+    font-size: 12px;
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.card {
+    padding: 10px 12px;
+    background: #1d1d1d;
+    border-radius: 7px;
+}
+
+.card-title {
+    margin-bottom: 4px;
+    color: #999;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.card-value {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.card-small {
+    font-size: 12px;
+    color: #888;
+    margin-top: 3px;
+}
+
+.card-accent {
+    border-left: 3px solid #555;
+}
+
+.card-value.transit {
+    color: #ffcc66;
+}
+
+.section-title-note {
+    margin-left: 6px;
+    color: #777;
+    font-size: 11px;
+    font-weight: normal;
+}
+
+.transit-source {
+    color: #f0f0f0;
+    font-weight: bold;
+}
+
+.transit-arrow {
+    color: #777;
+}
+
+.direct {
+    color: #78d98a;
+}
+
+.via {
+    color: #6db5ff;
+}
+
+/* ============================================================
+   METEO
+   ============================================================ */
+
+.weather-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.weather-title-icon {
+    font-size: 20px;
+}
+
+.weather-card .card-value {
+    font-size: 21px;
+}
+
+.weather-updated {
+    color: #777;
+    font-size: 11px;
+    margin-top: 5px;
+}
+
+/* ============================================================
+   SEZIONI
+   ============================================================ */
+
+h2 {
+    margin: 15px 0 7px;
+    font-size: 16px;
+}
+
+.section {
+    overflow: hidden;
+    margin-bottom: 10px;
+    background: #1d1d1d;
+    border-radius: 7px;
+}
+
+.reception {
+    padding: 9px 12px;
+    border-bottom: 1px solid #333;
+}
+
+.reception:last-child {
+    border-bottom: none;
+}
+
+.reception-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.time {
+    font-weight: bold;
+}
+
+.receiver {
+    color: #8ab4ff;
+    font-weight: bold;
+}
+
+.path {
+    color: #ffcc66;
+    font-weight: bold;
+}
+
+.route {
+    margin-top: 3px;
+    color: #888;
+    font-size: 11px;
+}
+
+.empty {
+    padding: 15px;
+    color: #888;
+}
+
+/* ============================================================
+   MOBILE
+   ============================================================ */
+
+@media (max-width: 700px) {
+
+    .title {
+        font-size: 16px;
+    }
+
+    .station-name {
+        font-size: 20px;
+    }
+
+    .container {
+        margin-top: 8px;
+    }
+
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card-value {
+        font-size: 14px;
+    }
+
+    .weather-card .card-value {
+        font-size: 18px;
+    }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="topbar">
+
+    <div class="title">
+        📡 LoRa APRS
+    </div>
+
+    <a href="index.html" class="back">
+        🏠 Home
+    </a>
+
+</div>
+
+<div class="container">
+
+    <div id="content" class="loading">
+        Caricamento stazione...
+    </div>
+
+</div>
+
+<script src="/aprs-symbols/aprs-symbols.js"></script>
+
+<script>
+
+/* ============================================================
+   CONFIGURAZIONE
+   ============================================================ */
+
+const API = "/lora-api";
+
+const params = new URLSearchParams(window.location.search);
+
+const callsign = params.get("callsign");
+
+
+/* ============================================================
+   UTILITY
+   ============================================================ */
+
+function escapeHtml(value) {
+
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+function formatDate(value) {
+
+    if (!value) {
+        return "-";
+    }
+
+    const d = new Date(value);
+
+    if (isNaN(d.getTime())) {
+        return value;
+    }
+
+    return d.toLocaleString(
+        "it-IT",
+        {
+            dateStyle: "short",
+            timeStyle: "medium"
+        }
+    );
+}
+
+
+/* ============================================================
+   PATH APRS
+   ============================================================ */
+
+function analyzePath(packet) {
+
+    const raw =
+        packet.packet ||
+        packet.raw ||
+        packet.data ||
+        "";
+
+    const result = {
+        direct: true,
+        via: null,
+        internet: false,
+        path: []
+    };
+
+    const colon = raw.indexOf(":");
+
+    const header =
+        colon >= 0
+            ? raw.substring(0, colon)
+            : raw;
+
+    const gt = header.indexOf(">");
+
+    if (gt < 0) {
+        return result;
+    }
+
+    const pathText =
+        header.substring(gt + 1);
+
+    const path =
+        pathText
+            .split(",")
+            .map(x => x.trim())
+            .filter(Boolean);
+
+    result.path = path;
+
+    for (const item of path) {
+
+        const clean =
+            item
+                .replace(/\*$/, "")
+                .trim()
+                .toUpperCase();
+
+        if (
+            clean === "TCPIP" ||
+            clean === "TCPXX" ||
+            clean.startsWith("TCPIP") ||
+            clean.startsWith("TCPXX")
+        ) {
+
+            result.internet = true;
+
+            return result;
+        }
+    }
+
+    for (const item of path) {
+
+        if (item.endsWith("*")) {
+
+            result.via =
+                item.substring(
+                    0,
+                    item.length - 1
+                ).trim();
+
+            result.direct = false;
+
+            break;
+        }
+    }
+
+    return result;
+}
+
+
+/* ============================================================
+   TRANSITI VIA DIGIPEATER
+   ============================================================ */
+
+function getAprsFrames(rawPacket) {
+
+    const frames = [];
+
+    function walk(raw, depth) {
+
+        if (!raw || depth > 3) {
+            return;
+        }
+
+        const colon = raw.indexOf(":");
+
+        if (colon < 0) {
+            return;
+        }
+
+        const header = raw.substring(0, colon);
+        const payload = raw.substring(colon + 1);
+        const gt = header.indexOf(">");
+
+        if (gt >= 0) {
+
+            const source = header.substring(0, gt).trim();
+            const right = header.substring(gt + 1);
+            const parts = right
+                .split(",")
+                .map(x => x.trim())
+                .filter(Boolean);
+
+            frames.push({
+                source,
+                destination: parts[0] || "",
+                path: parts.slice(1)
+            });
+        }
+
+        if (payload.startsWith("}")) {
+            walk(payload.substring(1), depth + 1);
+        }
+    }
+
+    walk(String(rawPacket || ""), 0);
+
+    return frames;
+}
+
+
+function getTransitInfo(packet, targetCallsign) {
+
+    const raw =
+        packet.packet ||
+        packet.raw ||
+        packet.data ||
+        "";
+
+    const target =
+        String(targetCallsign || "")
+            .trim()
+            .toUpperCase();
+
+    if (!raw || !target) {
+        return null;
+    }
+
+    const frames = getAprsFrames(raw);
+
+    for (const frame of frames) {
+
+        for (const item of frame.path) {
+
+            const clean =
+                String(item)
+                    .trim()
+                    .toUpperCase();
+
+            if (!clean.endsWith("*")) {
+                continue;
+            }
+
+            const hop =
+                clean.substring(0, clean.length - 1).trim();
+
+            if (hop === target) {
+
+                return {
+                    source: frame.source || "-",
+                    path: frame.path,
+                    receiver: String(
+                        packet.receiver_callsign || ""
+                    ).trim()
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+
+/* ============================================================
+   SIMBOLO APRS
+   ============================================================ */
+
+function getStationSymbolHtml(
+    symbolTable,
+    symbolCode
+) {
+
+    if (!symbolTable || !symbolCode) {
+        return "";
+    }
+
+    let baseTable = symbolTable;
+    let overlay = null;
+    let symbolHtml = "";
+
+    /*
+     * APRS:
+     *
+     * /       = primary table
+     * \       = secondary table
+     * 0-9     = numeric overlay
+     * A-Z     = alphanumeric overlay
+     * a-j     = numeric overlay 0-9
+     *
+     * L_ viene usato dal parser/API per il simbolo
+     * meteo con overlay L.
+     *
+     * La libreria CSS dispone delle sole tabelle:
+     * table0 = /
+     * table1 = \
+     *
+     * quindi per L_ dobbiamo usare:
+     *
+     *     \_
+     *
+     * e aggiungere la L sopra al simbolo.
+     */
+
+    if (symbolTable === "/" || symbolTable === "\\") {
+
+        baseTable = symbolTable;
+
+    } else if (/^[0-9]$/.test(symbolTable)) {
+
+        baseTable = "\\";
+        overlay = symbolTable;
+
+    } else if (/^[a-j]$/.test(symbolTable)) {
+
+        baseTable = "\\";
+        overlay =
+            String(
+                symbolTable.charCodeAt(0) -
+                "a".charCodeAt(0)
+            );
+
+    } else if (/^[A-Z]$/.test(symbolTable)) {
+
+        baseTable = "\\";
+        overlay = symbolTable;
+
+    } else {
+
+        baseTable = "/";
+    }
+
+    try {
+
+        symbolHtml =
+            getAPRSSymbolImageTag(
+                baseTable + symbolCode,
+                48
+            );
+
+    } catch (error) {
+
+        console.error(
+            "Errore simbolo APRS:",
+            error
+        );
+
+        return "";
+    }
+
+    if (overlay !== null) {
+
+        let overlayClass =
+            "station-overlay";
+
+        if (
+            overlay === "L" &&
+            symbolCode === "_"
+        ) {
+
+            overlayClass += " wx";
+        }
+
+        symbolHtml +=
+            '<span class="' +
+            overlayClass +
+            '">' +
+            escapeHtml(overlay) +
+            '</span>';
+    }
+
+    return symbolHtml;
+}
+
+
+/* ============================================================
+   METEO APRS
+   ============================================================ */
+
+/*
+ * APRS WEATHER
+ *
+ * tDDD = temperatura Fahrenheit
+ * hDD  = umidità relativa %
+ * bDDDDD = pressione in decimi di hPa
+ *
+ * rDDD = pioggia ultima ora, centesimi di pollice
+ * pDDD = pioggia ultime 24 ore
+ * PDDD = pioggia da mezzanotte
+ *
+ * gDDD = raffica vento mph
+ * sDDD = velocità vento mph
+ * dDDD = direzione vento
+ */
+
+function parseWeather(packet) {
+
+    if (!packet) {
+        return null;
+    }
+
+    const raw =
+        String(
+            packet.packet ||
+            packet.raw ||
+            packet.data ||
+            ""
+        );
+
+    if (!raw) {
+        return null;
+    }
+
+    const colon = raw.indexOf(":");
+
+    const payload =
+        colon >= 0
+            ? raw.substring(colon + 1)
+            : raw;
+
+    const weather = {};
+
+    /*
+     * TEMPERATURA
+     */
+
+    const tempMatch =
+        payload.match(/t(-?\d{3})/i);
+
+    if (tempMatch) {
+
+        const fahrenheit =
+            Number(tempMatch[1]);
+
+        if (
+            fahrenheit !== 999 &&
+            Number.isFinite(fahrenheit)
+        ) {
+
+            weather.temperature =
+                (fahrenheit - 32) * 5 / 9;
+        }
+    }
+
+
+    /*
+     * UMIDITÀ
+     *
+     * APRS:
+     * h01-h99  = valore percentuale
+     * h00      = 100%
+     * h000     = 100%
+     * h999     = dato non disponibile
+     */
+
+    const humidityMatch =
+        payload.match(/h(\d{2,3})/i);
+
+    if (humidityMatch) {
+
+        const rawHumidity =
+            Number(humidityMatch[1]);
+
+        let humidity = null;
+
+        if (
+            rawHumidity === 0
+        ) {
+
+            // APRS h00 / h000 = 100%
+            humidity = 100;
+
+        } else if (
+            rawHumidity >= 1 &&
+            rawHumidity <= 100
+        ) {
+
+            humidity = rawHumidity;
+        }
+
+        if (humidity !== null) {
+
+            weather.humidity =
+                humidity;
+        }
+    }
+
+
+    /*
+     * PRESSIONE
+     */
+
+    const pressureMatch =
+        payload.match(/b(\d{5})/i);
+
+    if (pressureMatch) {
+
+        const pressure =
+            Number(pressureMatch[1]) / 10;
+
+        if (
+            pressure > 800 &&
+            pressure < 1200
+        ) {
+
+            weather.pressure =
+                pressure;
+        }
+    }
+
+
+    /*
+     * DIREZIONE VENTO
+     */
+
+    const windDirectionMatch =
+        payload.match(/d(\d{3})/i);
+
+    if (windDirectionMatch) {
+
+        const direction =
+            Number(windDirectionMatch[1]);
+
+        if (
+            direction >= 0 &&
+            direction <= 360
+        ) {
+
+            weather.windDirection =
+                direction;
+        }
+    }
+
+
+    /*
+     * VELOCITÀ VENTO
+     *
+     * APRS usa mph.
+     */
+
+    const windSpeedMatch =
+        payload.match(/s(\d{3})/i);
+
+    if (windSpeedMatch) {
+
+        const mph =
+            Number(windSpeedMatch[1]);
+
+        if (mph !== 999) {
+
+            weather.windSpeed =
+                mph * 1.609344;
+        }
+    }
+
+
+    /*
+     * RAFFICA VENTO
+     */
+
+    const gustMatch =
+        payload.match(/g(\d{3})/i);
+
+    if (gustMatch) {
+
+        const mph =
+            Number(gustMatch[1]);
+
+        if (mph !== 999) {
+
+            weather.gust =
+                mph * 1.609344;
+        }
+    }
+
+
+    /*
+     * PIOGGIA ULTIMA ORA
+     *
+     * APRS: centesimi di pollice.
+     */
+
+    const rainHourMatch =
+        payload.match(/r(\d{3})/i);
+
+    if (rainHourMatch) {
+
+        const hundredths =
+            Number(rainHourMatch[1]);
+
+        if (hundredths !== 999) {
+
+            weather.rainHour =
+                hundredths * 0.254;
+        }
+    }
+
+
+    /*
+     * PIOGGIA 24 ORE
+     */
+
+    const rain24Match =
+        payload.match(/p(\d{3})/i);
+
+    if (rain24Match) {
+
+        const hundredths =
+            Number(rain24Match[1]);
+
+        if (hundredths !== 999) {
+
+            weather.rain24 =
+                hundredths * 0.254;
+        }
+    }
+
+
+    /*
+     * PIOGGIA DA MEZZANOTTE
+     */
+
+    const rainMidnightMatch =
+        payload.match(/P(\d{3})/);
+
+    if (rainMidnightMatch) {
+
+        const hundredths =
+            Number(rainMidnightMatch[1]);
+
+        if (hundredths !== 999) {
+
+            weather.rainMidnight =
+                hundredths * 0.254;
+        }
+    }
+
+
+    /*
+     * Se non abbiamo trovato nessun dato
+     * meteo non è un packet meteo.
+     */
+
+    if (
+        Object.keys(weather).length === 0
+    ) {
+
+        return null;
+    }
+
+    weather.timestamp =
+        packet.timestamp ||
+        packet.received_at ||
+        packet.time ||
+        null;
+
+    weather.packet =
+        raw;
+
+    return weather;
+}
+
+
+/* ============================================================
+   FORMAT METEO
+   ============================================================ */
+
+function weatherCard(
+    title,
+    value,
+    unit,
+    icon
+) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+
+        value = "-";
+    }
+
+    return `
+
+        <div class="card weather-card">
+
+            <div class="card-title">
+
+                ${icon} ${title}
+
+            </div>
+
+            <div class="card-value">
+
+                ${escapeHtml(value)}
+                ${unit}
+
+            </div>
+
+        </div>
+
+    `;
+}
+
+
+function renderWeather(weather) {
+
+    if (!weather) {
+        return "";
+    }
+
+    let html = `
+
+        <h2 class="weather-title">
+
+            <span class="weather-title-icon">
+                🌤️
+            </span>
+
+            Dati meteo
+
+        </h2>
+
+        <div class="grid">
+
+    `;
+
+
+    if (
+        weather.temperature !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Temperatura",
+                weather.temperature.toFixed(1),
+                " °C",
+                "🌡️"
+            );
+    }
+
+
+    if (
+        weather.humidity !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Umidità",
+                weather.humidity,
+                " %",
+                "💧"
+            );
+    }
+
+
+    if (
+        weather.pressure !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Pressione",
+                weather.pressure.toFixed(1),
+                " hPa",
+                "🔵"
+            );
+    }
+
+
+    if (
+        weather.windDirection !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Direzione vento",
+                weather.windDirection,
+                "°",
+                "🧭"
+            );
+    }
+
+
+    if (
+        weather.windSpeed !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Vento",
+                weather.windSpeed.toFixed(1),
+                " km/h",
+                "💨"
+            );
+    }
+
+
+    if (
+        weather.gust !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Raffica",
+                weather.gust.toFixed(1),
+                " km/h",
+                "🌬️"
+            );
+    }
+
+
+    if (
+        weather.rainHour !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Pioggia 1 ora",
+                weather.rainHour.toFixed(1),
+                " mm",
+                "🌧️"
+            );
+    }
+
+
+    if (
+        weather.rain24 !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Pioggia 24 ore",
+                weather.rain24.toFixed(1),
+                " mm",
+                "🌧️"
+            );
+    }
+
+
+    if (
+        weather.rainMidnight !== undefined
+    ) {
+
+        html +=
+            weatherCard(
+                "Pioggia oggi",
+                weather.rainMidnight.toFixed(1),
+                " mm",
+                "🌧️"
+            );
+    }
+
+
+    html += `
+
+        </div>
+
+        <div class="weather-updated">
+
+            Ultimo aggiornamento:
+            ${formatDate(weather.timestamp)}
+
+        </div>
+
+    `;
+
+    return html;
+}
+
+
+/* ============================================================
+   POSIZIONE
+   ============================================================ */
+
+function getPacketPosition(packet) {
+
+    if (!packet) {
+        return null;
+    }
+
+    const latitude =
+        Number(
+            packet.latitude ??
+            packet.lat
+        );
+
+    const longitude =
+        Number(
+            packet.longitude ??
+            packet.lon
+        );
+
+    if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
+    ) {
+
+        return null;
+    }
+
+    if (
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+    ) {
+
+        return null;
+    }
+
+    return {
+        latitude,
+        longitude
+    };
+}
+
+
+/* ============================================================
+   AVVIO
+   ============================================================ */
+
+async function loadStation() {
+
+    const content =
+        document.getElementById("content");
+
+
+    if (!callsign) {
+
+        content.className = "error";
+
+        content.innerHTML =
+            "Nessun nominativo specificato.";
+
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                API + "/packets?limit=500",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "HTTP " + response.status
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        const packets =
+            Array.isArray(data)
+                ? data
+                : (
+                    Array.isArray(data.packets)
+                        ? data.packets
+                        : []
+                );
+
+
+        /*
+         * =====================================================
+         * FUNZIONI DATI
+         * =====================================================
+         */
+
+        function getSource(packet) {
+
+            return String(
+                packet.callsign ||
+                packet.source ||
+                packet.src ||
+                packet.station ||
+                ""
+            ).trim();
+        }
+
+
+        function getReceiver(packet) {
+
+            return String(
+                packet.receiver_callsign ||
+                ""
+            ).trim();
+        }
+
+
+        function getTime(packet) {
+
+            return (
+                packet.received_at ||
+                packet.timestamp ||
+                packet.time ||
+                ""
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * PACKET DELLA STAZIONE
+         * =====================================================
+         */
+
+        const transmittedPackets =
+            packets.filter(
+                packet =>
+                    getSource(packet).toUpperCase() ===
+                    callsign.toUpperCase()
+            );
+
+
+        const receivedPackets =
+            packets.filter(
+                packet =>
+                    getReceiver(packet).toUpperCase() ===
+                    callsign.toUpperCase()
+            );
+
+
+        /*
+         * =====================================================
+         * PACCHETTI TRANSITATI VIA STAZIONE
+         * =====================================================
+         */
+
+        const transitPackets = [];
+
+        packets.forEach(packet => {
+
+            const transit =
+                getTransitInfo(packet, callsign);
+
+            if (transit) {
+                transitPackets.push({
+                    packet,
+                    transit
+                });
+            }
+        });
+
+
+        const transitStations =
+            new Set(
+                transitPackets
+                    .map(x =>
+                        String(x.transit.source || "")
+                            .trim()
+                            .toUpperCase()
+                    )
+                    .filter(Boolean)
+            );
+
+
+        /*
+         * =====================================================
+         * POSIZIONE
+         * =====================================================
+         */
+
+        const stationPackets =
+            [...transmittedPackets]
+                .sort(
+                    (a, b) =>
+                        new Date(
+                            getTime(b)
+                        ).getTime()
+                        -
+                        new Date(
+                            getTime(a)
+                        ).getTime()
+                );
+
+
+        let stationPosition = null;
+
+
+        for (
+            const packet of stationPackets
+        ) {
+
+            const position =
+                getPacketPosition(packet);
+
+            if (position) {
+
+                stationPosition =
+                    position;
+
+                break;
+            }
+        }
+
+
+        /*
+         * =====================================================
+         * METEO
+         *
+         * IMPORTANTISSIMO:
+         *
+         * Cerchiamo SOLO nei packet trasmessi
+         * dalla stazione selezionata.
+         *
+         * In questo modo non mostriamo il meteo
+         * di un'altra stazione.
+         * =====================================================
+         */
+
+        let latestWeather = null;
+
+
+        for (
+            const packet of stationPackets
+        ) {
+
+            const weather =
+                parseWeather(packet);
+
+            if (weather) {
+
+                latestWeather =
+                    weather;
+
+                break;
+            }
+        }
+
+
+        /*
+         * =====================================================
+         * RAGGRUPPAMENTO
+         * =====================================================
+         */
+
+        function groupPackets(
+            list,
+            nameFunction
+        ) {
+
+            const groups = {};
+
+
+            list.forEach(
+                packet => {
+
+                    const name =
+                        nameFunction(packet);
+
+                    if (!name) {
+                        return;
+                    }
+
+
+                    const info =
+                        analyzePath(packet);
+
+
+                    if (info.internet) {
+                        return;
+                    }
+
+
+                    const category =
+                        info.direct
+                            ? "direct"
+                            : "via";
+
+
+                    const key =
+                        category === "via"
+                            ? name + "|" + (
+                                info.via ||
+                                "UNKNOWN"
+                            )
+                            : name + "|DIRECT";
+
+
+                    if (!groups[key]) {
+
+                        groups[key] = {
+
+                            name,
+                            category,
+                            via: info.via,
+                            count: 0,
+                            last: null
+                        };
+                    }
+
+
+                    groups[key].count++;
+
+
+                    const time =
+                        getTime(packet);
+
+
+                    if (time) {
+
+                        const date =
+                            new Date(time);
+
+                        if (
+                            !isNaN(
+                                date.getTime()
+                            )
+                        ) {
+
+                            if (
+                                !groups[key].last ||
+                                date >
+                                groups[key].last
+                            ) {
+
+                                groups[key].last =
+                                    date;
+                            }
+                        }
+                    }
+                }
+            );
+
+
+            return Object.values(groups).sort(
+                (a, b) => {
+
+                    const ad =
+                        a.last
+                            ? a.last.getTime()
+                            : 0;
+
+                    const bd =
+                        b.last
+                            ? b.last.getTime()
+                            : 0;
+
+                    return bd - ad;
+                }
+            );
+        }
+
+
+        const transmittedGroups =
+            groupPackets(
+                transmittedPackets,
+                packet => getReceiver(packet)
+            );
+
+
+        const transmittedDirect =
+            transmittedGroups.filter(
+                x => x.category === "direct"
+            );
+
+
+        const transmittedVia =
+            transmittedGroups.filter(
+                x => x.category === "via"
+            );
+
+
+        const receivedGroups =
+            groupPackets(
+                receivedPackets,
+                packet => getSource(packet)
+            );
+
+
+        const receivedDirect =
+            receivedGroups.filter(
+                x => x.category === "direct"
+            );
+
+
+        const receivedVia =
+            receivedGroups.filter(
+                x => x.category === "via"
+            );
+
+
+        const transitGroupsMap = {};
+
+        transitPackets.forEach(entry => {
+
+            const source =
+                String(entry.transit.source || "-").trim();
+
+            const receiver =
+                String(entry.transit.receiver || "-").trim();
+
+            const key =
+                source.toUpperCase() + "|" +
+                receiver.toUpperCase();
+
+            if (!transitGroupsMap[key]) {
+
+                transitGroupsMap[key] = {
+                    source,
+                    receiver,
+                    count: 0,
+                    last: null
+                };
+            }
+
+            transitGroupsMap[key].count++;
+
+            const time = getTime(entry.packet);
+
+            if (time) {
+
+                const date = new Date(time);
+
+                if (!isNaN(date.getTime())) {
+
+                    if (
+                        !transitGroupsMap[key].last ||
+                        date > transitGroupsMap[key].last
+                    ) {
+                        transitGroupsMap[key].last = date;
+                    }
+                }
+            }
+        });
+
+
+        const transitGroups =
+            Object.values(transitGroupsMap)
+                .sort((a, b) => {
+                    const ad = a.last ? a.last.getTime() : 0;
+                    const bd = b.last ? b.last.getTime() : 0;
+                    return bd - ad;
+                });
+
+
+        /*
+         * =====================================================
+         * ULTIMO PACKET / SIMBOLO
+         * =====================================================
+         */
+
+        const latest =
+            transmittedPackets[0] ||
+            receivedPackets[0] ||
+            null;
+
+
+        let symbolHtml = "";
+
+
+        if (
+            latest &&
+            latest.symbol_table &&
+            latest.symbol_code
+        ) {
+
+            symbolHtml =
+                getStationSymbolHtml(
+                    latest.symbol_table,
+                    latest.symbol_code
+                );
+        }
+
+
+        /*
+         * =====================================================
+         * DATE ATTIVITÀ
+         * =====================================================
+         */
+
+        const dates =
+            packets
+                .filter(
+                    packet =>
+                        getSource(packet).toUpperCase() ===
+                        callsign.toUpperCase()
+                        ||
+                        getReceiver(packet).toUpperCase() ===
+                        callsign.toUpperCase()
+                        ||
+                        !!getTransitInfo(packet, callsign)
+                )
+                .map(
+                    packet => getTime(packet)
+                )
+                .filter(Boolean)
+                .map(
+                    value => new Date(value)
+                )
+                .filter(
+                    date =>
+                        !isNaN(
+                            date.getTime()
+                        )
+                )
+                .sort(
+                    (a, b) => a - b
+                );
+
+
+        const firstDate =
+            dates.length
+                ? dates[0]
+                : null;
+
+
+        const lastDate =
+            dates.length
+                ? dates[dates.length - 1]
+                : null;
+
+
+        /*
+         * =====================================================
+         * RENDER GROUP
+         * =====================================================
+         */
+
+        function renderGroup(group) {
+
+            const route =
+                group.category === "via"
+
+                    ?
+
+                    `
+                        <span class="via">
+                            VIA ${escapeHtml(
+                                group.via || "-"
+                            )}
+                        </span>
+                    `
+
+                    :
+
+                    `
+                        <span class="direct">
+                            DIRETTA
+                        </span>
+                    `;
+
+
+            return `
+
+                <div class="reception">
+
+                    <div class="reception-head">
+
+                        <span class="receiver">
+
+                            ${escapeHtml(
+                                group.name
+                            )}
+
+                        </span>
+
+                        ${route}
+
+                    </div>
+
+                    <div class="route">
+
+                        <strong>
+                            ${group.count}
+                        </strong>
+
+                        ${
+                            group.count === 1
+                                ? "volta"
+                                : "volte"
+                        }
+
+                        &nbsp;·&nbsp;
+
+                        ultima:
+
+                        <strong>
+                            ${formatDate(
+                                group.last
+                            )}
+                        </strong>
+
+                    </div>
+
+                </div>
+
+            `;
+        }
+
+
+        function renderSection(
+            groups,
+            emptyText
+        ) {
+
+            if (!groups.length) {
+
+                return `
+
+                    <div class="empty">
+
+                        ${emptyText}
+
+                    </div>
+
+                `;
+            }
+
+
+            return groups
+                .map(renderGroup)
+                .join("");
+        }
+
+
+        function summaryCard(title, value, className = "") {
+
+            if (value === null ||
+                value === undefined ||
+                value === 0 ||
+                value === "") {
+                return "";
+            }
+
+            return `
+                <div class="card card-accent">
+                    <div class="card-title">
+                        ${escapeHtml(title)}
+                    </div>
+                    <div class="card-value ${className}">
+                        ${escapeHtml(value)}
+                    </div>
+                </div>
+            `;
+        }
+
+
+        function renderTransitGroup(group) {
+
+            return `
+                <div class="reception">
+                    <div class="reception-head">
+                        <span class="transit-source">
+                            ${escapeHtml(group.source)}
+                        </span>
+                        <span class="transit-arrow">→</span>
+                        <span class="via">
+                            VIA ${escapeHtml(callsign)}
+                        </span>
+                        <span class="transit-arrow">→</span>
+                        <span class="receiver">
+                            ${escapeHtml(group.receiver)}
+                        </span>
+                    </div>
+                    <div class="route">
+                        <strong>${group.count}</strong>
+                        ${group.count === 1 ? "volta" : "volte"}
+                        &nbsp;·&nbsp;
+                        ultima:
+                        <strong>${formatDate(group.last)}</strong>
+                    </div>
+                </div>
+            `;
+        }
+
+
+        /*
+         * =====================================================
+         * RENDER PAGINA
+         * =====================================================
+         */
+
+        content.className = "";
+
+
+        content.innerHTML = `
+
+            <div class="station-header">
+
+                <div class="station-symbol">
+
+                    ${symbolHtml}
+
+                </div>
+
+                <div>
+
+                    <div class="station-name">
+
+                        ${escapeHtml(
+                            callsign
+                        )}
+
+                    </div>
+
+                    <div class="station-subtitle">
+
+                        Attività APRS
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =============================================
+                 METEO
+                 ============================================= -->
+
+            ${renderWeather(
+                latestWeather
+            )}
+
+
+            <!-- =============================================
+                 RIEPILOGO
+                 ============================================= -->
+
+            <div class="grid">
+
+                ${summaryCard(
+                    "Pacchetti trasmessi",
+                    transmittedPackets.length
+                )}
+
+                ${summaryCard(
+                    "Pacchetti ricevuti",
+                    receivedPackets.length
+                )}
+
+                ${summaryCard(
+                    "Stazioni ricevute direttamente",
+                    receivedDirect.length,
+                    "direct"
+                )}
+
+                ${summaryCard(
+                    "Stazioni ricevute via",
+                    receivedVia.length,
+                    "via"
+                )}
+
+                ${summaryCard(
+                    "Pacchetti transitati via " + callsign,
+                    transitPackets.length,
+                    "transit"
+                )}
+
+                ${summaryCard(
+                    "Stazioni transitate via " + callsign,
+                    transitStations.size,
+                    "transit"
+                )}
+
+            </div>
+
+
+            <div class="grid">
+
+                ${firstDate ? `
+                    <div class="card">
+                        <div class="card-title">Prima attività</div>
+                        <div class="card-value">${formatDate(firstDate)}</div>
+                    </div>
+                ` : ""}
+
+                ${lastDate ? `
+                    <div class="card">
+                        <div class="card-title">Ultima attività</div>
+                        <div class="card-value">${formatDate(lastDate)}</div>
+                    </div>
+                ` : ""}
+
+                ${stationPosition ? `
+                    <div class="card">
+                        <div class="card-title">Posizione</div>
+                        <div class="card-value">
+                            ${stationPosition.latitude.toFixed(5)}, ${stationPosition.longitude.toFixed(5)}
+                        </div>
+                    </div>
+                ` : ""}
+
+            </div>
+
+
+            <!-- =============================================
+                 TRASMISSIONI DELLA STAZIONE
+                 ============================================= -->
+
+            ${transmittedDirect.length ? `
+                <h2>
+                    📡 Pacchetti di ${escapeHtml(callsign)} ricevuti direttamente
+                </h2>
+                <div class="section">
+                    ${renderSection(
+                        transmittedDirect,
+                        ""
+                    )}
+                </div>
+            ` : ""}
+
+            ${transmittedVia.length ? `
+                <h2>
+                    🔁 Pacchetti di ${escapeHtml(callsign)} ricevuti via altra stazione
+                </h2>
+                <div class="section">
+                    ${renderSection(
+                        transmittedVia,
+                        ""
+                    )}
+                </div>
+            ` : ""}
+
+
+            <!-- =============================================
+                 DATI DI RICEZIONE (solo se esistono)
+                 ============================================= -->
+
+            ${receivedDirect.length ? `
+                <h2>
+                    📶 Stazioni ricevute direttamente
+                </h2>
+                <div class="section">
+                    ${renderSection(
+                        receivedDirect,
+                        ""
+                    )}
+                </div>
+            ` : ""}
+
+            ${receivedVia.length ? `
+                <h2>
+                    🔁 Stazioni ricevute via altra stazione
+                </h2>
+                <div class="section">
+                    ${renderSection(
+                        receivedVia,
+                        ""
+                    )}
+                </div>
+            ` : ""}
+
+
+            <!-- =============================================
+                 TRANSITI VIA STAZIONE
+                 ============================================= -->
+
+            ${transitGroups.length ? `
+                <h2>
+                    🔀 Pacchetti transitati via ${escapeHtml(callsign)}
+                    <span class="section-title-note">
+                        visti dai nostri ricevitori
+                    </span>
+                </h2>
+                <div class="section">
+                    ${transitGroups
+                        .map(renderTransitGroup)
+                        .join("")}
+                </div>
+            ` : ""}
+
+        `;
+
+    }
+
+    catch (error) {
+
+        console.error(error);
+
+        content.className = "error";
+
+        content.innerHTML = `
+
+            Errore nel caricamento
+            della stazione:
+
+            ${escapeHtml(
+                error.message
+            )}
+
+        `;
+    }
+}
+
+
+loadStation();
+
+</script>
+
+</body>
+</html>
