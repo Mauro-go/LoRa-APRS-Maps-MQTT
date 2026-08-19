@@ -1,4 +1,5 @@
 <img width="1872" height="966" alt="immagine" src="https://github.com/user-attachments/assets/a5b60fdd-593e-4802-b15a-4b48373972f4" />
+<img width="1917" height="1077" alt="immagine" src="https://github.com/user-attachments/assets/94171a88-0488-449c-a277-58680b3f7fe6" />
 
 
 # LoRa APRS Maps MQTT
