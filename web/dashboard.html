@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>LoRa APRS Monitor</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0f172a;
+    color: #e5e7eb;
+}
+
+header {
+    background: #111827;
+    padding: 20px 30px;
+    border-bottom: 1px solid #334155;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 6px 0 0;
+    color: #94a3b8;
+}
+
+.container {
+    max-width: 1500px;
+    margin: auto;
+    padding: 25px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.card-title {
+    color: #94a3b8;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.card-value {
+    font-size: 32px;
+    font-weight: bold;
+}
+
+.receivers {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-bottom: 25px;
+}
+
+.receiver {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.receiver-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.receiver-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.coverage-button,
+.home-button {
+    display: inline-block;
+    color: white;
+    text-decoration: none;
+    padding: 6px 10px;
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.coverage-button:hover,
+.home-button:hover {
+    background: #475569;
+}
+
+.header-actions {
+    margin-top: 12px;
+}
+
+.receiver-name {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #64748b;
+}
+
+.dot.active {
+    background: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+}
+
+.receiver-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.receiver-stat {
+    background: #0f172a;
+    border-radius: 7px;
+    padding: 12px;
+}
+
+.receiver-stat-title {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.receiver-stat-value {
+    margin-top: 5px;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+.section {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.section h2 {
+    margin-top: 0;
+    font-size: 20px;
+}
+
+.station-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+.station-column {
+    min-width: 0;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.station-column-title {
+    padding: 13px 15px;
+    background: #111827;
+    border-bottom: 1px solid #334155;
+    font-size: 17px;
+    font-weight: bold;
+}
+.station-column-title .station-count {
+    margin-left: 7px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: normal;
+}
+.station-table-wrap { overflow-x: auto; }
+@media (max-width: 900px) {
+    .station-columns { grid-template-columns: 1fr; }
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 10px;
+    border-bottom: 1px solid #334155;
+}
+
+td {
+    padding: 10px;
+    border-bottom: 1px solid #273449;
+    font-size: 14px;
+}
+
+tr:hover {
+    background: #263449;
+}
+
+.callsign {
+    font-weight: bold;
+    color: #38bdf8;
+}
+
+.packet {
+    font-family: monospace;
+    font-size: 12px;
+    color: #cbd5e1;
+    word-break: break-all;
+}
+
+.time {
+    white-space: nowrap;
+    color: #94a3b8;
+}
+
+footer {
+    text-align: center;
+    color: #64748b;
+    font-size: 12px;
+    padding: 20px;
+}
+
+.error {
+    background: #450a0a;
+    border: 1px solid #991b1b;
+    color: #fecaca;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: none;
+}
+
+@media (max-width: 900px) {
+
+    .cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .receivers {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+    .container {
+        padding: 12px;
+    }
+
+    table {
+        font-size: 12px;
+    }
+
+    th,
+    td {
+        padding: 7px;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+    <h1>📡 LoRa APRS Monitor</h1>
+
+    <p>
+        Monitoraggio ricevitori LoRa APRS via MQTT
+    </p>
+
+    <div class="header-actions">
+        <a href="index.html" class="home-button">
+            🏠 Home
+        </a>
+    </div>
+
+</header>
+
+
+<div class="container">
+
+    <div id="error" class="error"></div>
+
+
+    <!-- STATISTICHE GENERALI -->
+
+    <div class="cards">
+
+        <div class="card">
+
+            <div class="card-title">
+                Pacchetti totali
+            </div>
+
+            <div
+                class="card-value"
+                id="totalPackets">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                Stazioni uniche
+            </div>
+
+            <div
+                class="card-value"
+                id="uniqueStations">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                Pacchetti ultime 24h
+            </div>
+
+            <div
+                class="card-value"
+                id="packets24h">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                Ricevitori attivi
+            </div>
+
+            <div
+                class="card-value"
+                id="activeReceivers">
+                -
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- RICEVITORI -->
+
+    <div class="receivers" id="receivers">
+
+    </div>
+
+
+    <!-- STAZIONI PER RICEVITORE -->
+
+    <div class="section">
+        <h2>📻 Stazioni ricevute per ricevitore</h2>
+
+        <div class="station-columns">
+            <div class="station-column">
+                <div class="station-column-title">
+                    📡 IQ3GO-12
+                    <span class="station-count" id="iq3goStationCount"></span>
+                </div>
+                <div class="station-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Callsign</th>
+                                <th>Pacchetti</th>
+                                <th>Ultimo ascolto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="iq3goStationsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="station-column">
+                <div class="station-column-title">
+                    📡 IV3SCP-10
+                    <span class="station-count" id="iv3scpStationCount"></span>
+                </div>
+                <div class="station-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Callsign</th>
+                                <th>Pacchetti</th>
+                                <th>Ultimo ascolto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="iv3scpStationsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ULTIMI PACCHETTI -->
+
+    <div class="section">
+
+        <h2>📦 Ultimi pacchetti</h2>
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>Ora</th>
+                    <th>Ricevitore</th>
+                    <th>Callsign</th>
+                    <th>Packet</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody id="packetsTable">
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<footer>
+
+    LoRa APRS Monitor —
+    aggiornamento automatico ogni 10 secondi
+
+</footer>
+
+
+<script>
+
+const API = "/lora-api";
+
+
+function escapeHtml(value) {
+
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+
+function formatTime(timestamp) {
+
+    if (!timestamp) {
+        return "-";
+    }
+
+    const date = new Date(timestamp);
+
+    return date.toLocaleString("it-IT");
+}
+
+
+function showError(message) {
+
+    const element =
+        document.getElementById("error");
+
+    element.textContent = message;
+
+    element.style.display = "block";
+}
+
+
+function hideError() {
+
+    document.getElementById("error")
+        .style.display = "none";
+}
+
+
+async function loadStats() {
+
+    const response =
+        await fetch(API + "/stats");
+
+    if (!response.ok) {
+        throw new Error("Errore API stats");
+    }
+
+    const data =
+        await response.json();
+
+    document.getElementById("totalPackets")
+        .textContent = data.total_packets;
+
+    document.getElementById("uniqueStations")
+        .textContent = data.unique_stations;
+
+    document.getElementById("packets24h")
+        .textContent = data.packets_24h;
+}
+
+
+async function loadStatus() {
+
+    const response =
+        await fetch(API + "/status");
+
+    if (!response.ok) {
+        throw new Error("Errore API status");
+    }
+
+    const data =
+        await response.json();
+
+    const container =
+        document.getElementById("receivers");
+
+    container.innerHTML = "";
+
+    let active = 0;
+
+    data.receivers.forEach(receiver => {
+
+        const hasData =
+            receiver.packets > 0;
+
+        if (hasData) {
+            active++;
+        }
+
+        const html = `
+
+            <div class="receiver">
+
+                <div class="receiver-header">
+
+                    <div class="receiver-name">
+                        📡 ${escapeHtml(receiver.callsign)}
+                    </div>
+
+                    <div class="receiver-actions">
+
+                        <a
+                            class="coverage-button"
+                            href="${
+                                receiver.callsign === "IQ3GO-12"
+                                    ? "iq3go-12.html"
+                                    : (
+                                        receiver.callsign === "IV3SCP-10"
+                                            ? "iv3scp-10.html"
+                                            : "#"
+                                    )
+                            }"
+                        >
+                            🗺️ Mappa Copertura
+                        </a>
+
+                        <div class="status">
+
+                            <span class="dot ${
+                                hasData ? "active" : ""
+                            }"></span>
+
+                            ${
+                                hasData
+                                ? "Attivo"
+                                : "In attesa"
+                            }
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="receiver-stats">
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            Pacchetti
+                        </div>
+
+                        <div class="receiver-stat-value">
+                            ${receiver.packets}
+                        </div>
+
+                    </div>
+
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            Stazioni
+                        </div>
+
+                        <div class="receiver-stat-value">
+                            ${receiver.stations}
+                        </div>
+
+                    </div>
+
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            Ultimo pacchetto
+                        </div>
+
+                        <div class="receiver-stat-value"
+                             style="font-size:13px">
+
+                            ${
+                                formatTime(
+                                    receiver.last_packet
+                                )
+                            }
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        `;
+
+        container.innerHTML += html;
+
+    });
+
+    document.getElementById("activeReceivers")
+        .textContent = active;
+}
+
+
+async function loadStations() {
+
+    const receivers = [
+        {
+            callsign: "IQ3GO-12",
+            tableId: "iq3goStationsTable",
+            countId: "iq3goStationCount"
+        },
+        {
+            callsign: "IV3SCP-10",
+            tableId: "iv3scpStationsTable",
+            countId: "iv3scpStationCount"
+        }
+    ];
+
+    await Promise.all(
+        receivers.map(async receiver => {
+
+            const response =
+                await fetch(
+                    API +
+                    "/stations?receiver=" +
+                    encodeURIComponent(receiver.callsign) +
+                    "&limit=500"
+                );
+
+            if (!response.ok) {
+                throw new Error(
+                    "Errore API stations " +
+                    receiver.callsign
+                );
+            }
+
+            const data = await response.json();
+            const stations =
+                Array.isArray(data.stations)
+                    ? data.stations
+                    : [];
+
+            const table =
+                document.getElementById(receiver.tableId);
+
+            const count =
+                document.getElementById(receiver.countId);
+
+            table.innerHTML = "";
+            count.textContent =
+                "(" + stations.length + " stazioni)";
+
+            stations.forEach(station => {
+                table.innerHTML += `
+                    <tr>
+                        <td class="callsign">
+                            ${escapeHtml(station.callsign)}
+                        </td>
+                        <td>${station.packets}</td>
+                        <td class="time">
+                            ${formatTime(station.last_seen)}
+                        </td>
+                    </tr>
+                `;
+            });
+        })
+    );
+}
+
+
+async function loadPackets() {
+
+    const response =
+        await fetch(API + "/packets?limit=50");
+
+    if (!response.ok) {
+        throw new Error("Errore API packets");
+    }
+
+    const data =
+        await response.json();
+
+    const table =
+        document.getElementById("packetsTable");
+
+    table.innerHTML = "";
+
+    data.packets.forEach(packet => {
+
+        table.innerHTML += `
+
+            <tr>
+
+                <td class="time">
+                    ${formatTime(packet.timestamp)}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        packet.receiver_callsign
+                    )}
+                </td>
+
+                <td class="callsign">
+                    ${escapeHtml(
+                        packet.callsign
+                    )}
+                </td>
+
+                <td class="packet">
+                    ${escapeHtml(
+                        packet.packet
+                    )}
+                </td>
+
+            </tr>
+
+        `;
+
+    });
+}
+
+
+async function refresh() {
+
+    try {
+
+        hideError();
+
+        await Promise.all([
+            loadStats(),
+            loadStatus(),
+            loadStations(),
+            loadPackets()
+        ]);
+
+    } catch (error) {
+
+        console.error(error);
+
+        showError(
+            "Impossibile collegarsi all'API LoRa APRS"
+        );
+
+    }
+
+}
+
+
+refresh();
+
+setInterval(
+    refresh,
+    10000
+);
+
+</script>
+
+<script src="i18n/i18n.js"></script>
+</body>
+</html>

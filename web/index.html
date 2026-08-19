@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Copertura ricevitore - LoRa APRS Maps MQTT</title>
+<title>LoRa APRS by IV3SCP</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
@@ -145,6 +145,7 @@ body {
     font-size: 10px;
     font-weight: bold;
     box-shadow: 0 1px 2px rgba(0,0,0,.3);
+    pointer-events: none;
 }
 
 /* ======================================================
@@ -157,6 +158,32 @@ body {
 
 .leaflet-control-attribution {
     font-size: 10px;
+}
+
+
+/* ======================================================
+   RICEZIONE LIVE
+   ====================================================== */
+
+.leaflet-marker-icon.live-rx-flash .aprs-symbol {
+    animation: liveRxSymbol 1.8s ease-out;
+}
+
+.leaflet-marker-icon.live-rx-flash .callsign {
+    animation: liveRxLabel 1.8s ease-out;
+}
+
+@keyframes liveRxSymbol {
+    0% { filter: drop-shadow(0 0 0 rgba(0,191,255,0)) brightness(1); transform: scale(1); }
+    18% { filter: drop-shadow(0 0 10px rgba(0,191,255,1)) drop-shadow(0 0 18px rgba(0,191,255,.85)) brightness(1.8); transform: scale(1.30); }
+    45% { filter: drop-shadow(0 0 7px rgba(0,191,255,.9)) brightness(1.45); transform: scale(1.12); }
+    100% { filter: drop-shadow(0 0 0 rgba(0,191,255,0)) brightness(1); transform: scale(1); }
+}
+
+@keyframes liveRxLabel {
+    0% { box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    18% { box-shadow: 0 0 7px rgba(0,191,255,1), 0 0 14px rgba(0,191,255,.75); }
+    100% { box-shadow: 0 1px 2px rgba(0,0,0,.3); }
 }
 
 /* ======================================================
@@ -186,9 +213,8 @@ body {
 }
 
 
-
 /* ======================================================
-   NAVIGAZIONE
+   MENU RICEVITORI
    ====================================================== */
 
 .receiver-menu {
@@ -239,17 +265,6 @@ body {
     display: block;
 }
 
-.home-button {
-    display: inline-block;
-    color: white;
-    text-decoration: none;
-    padding: 5px 9px;
-    background: #333;
-    border-radius: 5px;
-    font-size: 11px;
-    margin-left: 6px;
-}
-
 </style>
 </head>
 
@@ -260,24 +275,16 @@ body {
     <div>
 
         <span class="title">
-            📡 Copertura <span id="coverageReceiverTitle">...</span>
+            📡 LoRa APRS by IV3SCP
         </span>
 
         <span class="subtitle">
-            Stazioni ricevute direttamente
+            APRS Station Map via MQTT
         </span>
 
     </div>
 
     <div>
-
-
-        <a
-            href="index.html"
-            class="home-button"
-        >
-            🏠 Home
-        </a>
 
         <a
             href="dashboard.html"
@@ -288,7 +295,6 @@ body {
                 background:#333;
                 border-radius:5px;
                 font-size:11px;
-                margin-left:6px;
             "
         >
             📊 Dashboard
@@ -300,13 +306,19 @@ body {
                 📡 Ricevitori ▾
             </span>
 
-            <div
-                class="receiver-menu-content"
-                id="receiverMenuContent"
-            ></div>
+            <div class="receiver-menu-content">
+
+                <a href="iq3go-12.html">
+                    📡 IQ3GO-12
+                </a>
+
+                <a href="iv3scp-10.html">
+                    📡 IV3SCP-10
+                </a>
+
+            </div>
 
         </div>
-
 
         <select
             id="periodSelect"
@@ -365,24 +377,52 @@ const SYMBOL_PATH = "/aprs-symbols/";
 let map;
 let markers = {};
 let hoverConnectionLines = [];
-let firstLoad = true;
+
+/*
+ * Vista mappa persistente.
+ * Manteniamo centro e zoom quando si entra in station.html
+ * e poi si ritorna alla home.
+ */
+const MAP_VIEW_STORAGE_KEY = "loraAprsMapView";
+
+let savedMapView = null;
+
+try {
+    const storedMapView =
+        localStorage.getItem(MAP_VIEW_STORAGE_KEY);
+
+    if (storedMapView) {
+        const parsedMapView =
+            JSON.parse(storedMapView);
+
+        if (
+            parsedMapView &&
+            Number.isFinite(Number(parsedMapView.lat)) &&
+            Number.isFinite(Number(parsedMapView.lon)) &&
+            Number.isFinite(Number(parsedMapView.zoom))
+        ) {
+            savedMapView = {
+                lat: Number(parsedMapView.lat),
+                lon: Number(parsedMapView.lon),
+                zoom: Number(parsedMapView.zoom)
+            };
+        }
+    }
+}
+catch (e) {
+    savedMapView = null;
+}
+
+let firstLoad = !savedMapView;
 let trackLayers = {};
 let selectedPeriodHours = 1;
 
+const LIVE_POLL_INTERVAL = 2000;
+const LIVE_EFFECT_DURATION = 2300;
 
-const params =
-    new URLSearchParams(window.location.search);
-
-const REQUESTED_RECEIVER =
-    params.get("receiver");
-
-let RECEIVER = null;
-let RECEIVER_LAT = null;
-let RECEIVER_LON = null;
-
-let coverageLines = {};
-
-
+let liveLastPacketId = null;
+let livePolling = false;
+let lastPositionIndex = {};
 
 
 /* ============================================================
@@ -401,7 +441,33 @@ L.tileLayer(
     }
 ).addTo(map);
 
-map.setView([46.07, 13.24], 7);
+if (savedMapView) {
+    map.setView(
+        [savedMapView.lat, savedMapView.lon],
+        savedMapView.zoom
+    );
+}
+else {
+    map.setView([46.07, 13.24], 7);
+}
+
+map.on("moveend zoomend", () => {
+    const center = map.getCenter();
+
+    try {
+        localStorage.setItem(
+            MAP_VIEW_STORAGE_KEY,
+            JSON.stringify({
+                lat: center.lat,
+                lon: center.lng,
+                zoom: map.getZoom()
+            })
+        );
+    }
+    catch (e) {
+        // localStorage non disponibile: nessun problema.
+    }
+});
 
 
 /* ============================================================
@@ -710,6 +776,9 @@ function createAPRSIcon(
         html:
             marker.outerHTML,
 
+        // La hitbox Leaflet coincide con il solo simbolo APRS.
+        // Il nominativo resta visibile fuori dall'icona, ma non può
+        // intercettare il click destinato a una stazione vicina.
         iconSize:
             [24, 24],
 
@@ -1064,6 +1133,51 @@ function clearTrackLayers() {
    TRACCE STORICHE
    ============================================================ */
 
+function getTrackReceptionInfo(packet) {
+
+    const receiver =
+        normalizeCallsign(
+            packet.receiver_callsign ||
+            packet.receiver ||
+            "-"
+        );
+
+    const route =
+        getPacketRoute(packet);
+
+    let via = null;
+
+    route.forEach(hop => {
+
+        const text =
+            String(hop || "").trim();
+
+        if (!text.endsWith("*")) {
+            return;
+        }
+
+        const clean =
+            normalizeCallsign(text);
+
+        if (
+            !clean ||
+            clean === receiver ||
+            /^WIDE\d/i.test(clean) ||
+            /^TRACE\d/i.test(clean)
+        ) {
+            return;
+        }
+
+        via = clean;
+    });
+
+    return {
+        receiver: receiver || "-",
+        via: via
+    };
+}
+
+
 function updateTracks(stations) {
 
     clearTrackLayers();
@@ -1152,6 +1266,47 @@ function updateTracks(stations) {
                             className: "track-point"
                         }
                     );
+
+                const reception =
+                    getTrackReceptionInfo(
+                        item.packet
+                    );
+
+                const popupHtml = `
+                    <div style="min-width:180px;line-height:1.35">
+                        <div style="font-weight:bold;font-size:13px;margin-bottom:4px">
+                            ${callsign}
+                        </div>
+                        <div>
+                            <b>Ora:</b> ${formatDate(getPacketTime(item.packet))}
+                        </div>
+                        <div>
+                            <b>Ricevuto da:</b> ${reception.receiver}
+                        </div>
+                        ${
+                            reception.via
+                                ? `<div><b>Via:</b> ${reception.via}</div>`
+                                : `<div><b>Diretta</b></div>`
+                        }
+                    </div>
+                `;
+
+                point.bindPopup(
+                    popupHtml,
+                    {
+                        closeButton: false,
+                        autoPan: false,
+                        offset: [0, -5]
+                    }
+                );
+
+                point.on("mouseover", () => {
+                    point.openPopup();
+                });
+
+                point.on("mouseout", () => {
+                    point.closePopup();
+                });
 
                 point.on("click", () => {
                     window.location.href = "station.html?callsign=" + encodeURIComponent(callsign);
@@ -1375,6 +1530,288 @@ function buildPositionIndex(packets, stations) {
 
 
 /* ============================================================
+   RICEZIONE LIVE
+   ============================================================ */
+
+function getLivePosition(callsign, packet = null) {
+    const key = normalizeCallsign(callsign);
+    if (!key) return null;
+
+    if (lastPositionIndex[key]) {
+        return {
+            lat: Number(lastPositionIndex[key].lat),
+            lon: Number(lastPositionIndex[key].lon)
+        };
+    }
+
+    if (markers[key]) {
+        const latLng = markers[key].getLatLng();
+        if (latLng) {
+            return { lat: Number(latLng.lat), lon: Number(latLng.lng) };
+        }
+    }
+
+    if (packet) {
+        const lat = Number(packet.latitude ?? packet.lat ?? packet.last_known_latitude);
+        const lon = Number(packet.longitude ?? packet.lon ?? packet.last_known_longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+            return { lat: lat, lon: lon };
+        }
+    }
+
+    return null;
+}
+
+
+function flashLiveReceiver(receiver) {
+    const key = normalizeCallsign(receiver);
+    if (!key || !markers[key]) return;
+
+    const element = markers[key].getElement();
+    if (!element) return;
+
+    element.classList.remove("live-rx-flash");
+    void element.offsetWidth;
+    element.classList.add("live-rx-flash");
+
+    setTimeout(() => {
+        element.classList.remove("live-rx-flash");
+    }, LIVE_EFFECT_DURATION);
+}
+
+
+function createLiveWave(position, delay) {
+    if (!position) return;
+
+    setTimeout(() => {
+        const ring = L.circleMarker(
+            [position.lat, position.lon],
+            {
+                radius: 5,
+                color: "#00bfff",
+                weight: 2,
+                opacity: 0.95,
+                fillColor: "#00bfff",
+                fillOpacity: 0.12,
+                interactive: false
+            }
+        ).addTo(map);
+
+        const start = performance.now();
+        const duration = 1250;
+
+        function frame(now) {
+            const progress = Math.min(1, (now - start) / duration);
+            const radius = 5 + (34 * progress);
+            const opacity = 0.95 * (1 - progress);
+
+            ring.setRadius(radius);
+            ring.setStyle({
+                opacity: opacity,
+                fillOpacity: 0.12 * (1 - progress)
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(frame);
+            } else {
+                try { map.removeLayer(ring); } catch (e) {}
+            }
+        }
+
+        requestAnimationFrame(frame);
+    }, delay);
+}
+
+
+function animateReceiverWaves(position) {
+    createLiveWave(position, 0);
+    createLiveWave(position, 220);
+    createLiveWave(position, 440);
+}
+
+
+function drawLiveRoute(packet) {
+    if (!packet) return;
+
+    const source = packet.callsign || packet.source || packet.src || packet.station || "";
+    const receiver = packet.receiver_callsign || packet.receiver || "";
+
+    const sourcePosition = getLivePosition(source, packet);
+    const receiverPosition = getLivePosition(receiver);
+
+    if (receiverPosition) {
+        animateReceiverWaves(receiverPosition);
+        flashLiveReceiver(receiver);
+    }
+
+    if (!sourcePosition || !receiverPosition) return;
+
+    const nodes = [sourcePosition];
+    const usedKeys = new Set([normalizeCallsign(source)]);
+    const receiverKey = normalizeCallsign(receiver);
+
+    const route = getPacketRoute(packet);
+
+    route.forEach(hop => {
+        const text = String(hop).trim();
+        if (!text.endsWith("*")) return;
+
+        const hopKey = normalizeCallsign(text);
+        if (!hopKey || hopKey === receiverKey || usedKeys.has(hopKey)) return;
+
+        const hopPosition = getLivePosition(hopKey);
+        if (!hopPosition) return;
+
+        nodes.push(hopPosition);
+        usedKeys.add(hopKey);
+    });
+
+    nodes.push(receiverPosition);
+    if (nodes.length < 2) return;
+
+    const latLngs = nodes.map(point => [point.lat, point.lon]);
+
+    const glow = L.polyline(latLngs, {
+        color: "#ff0000",
+        weight: 7,
+        opacity: 0.28,
+        interactive: false
+    }).addTo(map);
+
+    const core = L.polyline(latLngs, {
+        color: "#ff0000",
+        weight: 3,
+        opacity: 1,
+        interactive: false
+    }).addTo(map);
+
+    let segmentIndex = 0;
+    let segmentStart = performance.now();
+
+    const movingDot = L.circleMarker(latLngs[0], {
+        radius: 4,
+        color: "#ff0000",
+        weight: 2,
+        fillColor: "#ffffff",
+        fillOpacity: 1,
+        opacity: 1,
+        interactive: false
+    }).addTo(map);
+
+    const totalSegments = latLngs.length - 1;
+    const segmentDuration = Math.max(420, 1500 / totalSegments);
+
+    function animateDot(now) {
+        if (segmentIndex >= totalSegments) return;
+
+        const progress = Math.min(1, (now - segmentStart) / segmentDuration);
+        const a = latLngs[segmentIndex];
+        const b = latLngs[segmentIndex + 1];
+
+        const lat = a[0] + ((b[0] - a[0]) * progress);
+        const lon = a[1] + ((b[1] - a[1]) * progress);
+
+        movingDot.setLatLng([lat, lon]);
+
+        if (progress >= 1) {
+            segmentIndex++;
+            segmentStart = now;
+        }
+
+        if (segmentIndex < totalSegments) {
+            requestAnimationFrame(animateDot);
+        }
+    }
+
+    requestAnimationFrame(animateDot);
+
+    const fadeStart = performance.now();
+
+    function fade(now) {
+        const progress = Math.min(1, (now - fadeStart) / LIVE_EFFECT_DURATION);
+        let opacity = 1;
+
+        if (progress > 0.60) {
+            opacity = 1 - ((progress - 0.60) / 0.40);
+        }
+
+        glow.setStyle({ opacity: 0.28 * opacity });
+        core.setStyle({ opacity: 1.00 * opacity });
+        movingDot.setStyle({ opacity: opacity, fillOpacity: opacity });
+
+        if (progress < 1) {
+            requestAnimationFrame(fade);
+        } else {
+            for (const layer of [glow, core, movingDot]) {
+                try { map.removeLayer(layer); } catch (e) {}
+            }
+        }
+    }
+
+    requestAnimationFrame(fade);
+}
+
+
+function animateLivePacket(packet) {
+    if (!packet || packet.id === undefined || packet.id === null) return;
+    drawLiveRoute(packet);
+}
+
+
+async function pollLivePackets() {
+    if (livePolling) return;
+    livePolling = true;
+
+    try {
+        const response = await fetch(
+            API + "/packets?limit=50&_live=" + Date.now(),
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const packets = Array.isArray(data)
+            ? data
+            : (Array.isArray(data.packets) ? data.packets : []);
+
+        const validPackets = packets
+            .filter(packet => Number.isFinite(Number(packet.id)))
+            .sort((a, b) => Number(a.id) - Number(b.id));
+
+        if (!validPackets.length) return;
+
+        const newestId = Number(validPackets[validPackets.length - 1].id);
+
+        if (liveLastPacketId === null) {
+            liveLastPacketId = newestId;
+            return;
+        }
+
+        const fresh = validPackets.filter(
+            packet => Number(packet.id) > liveLastPacketId
+        );
+
+        liveLastPacketId = Math.max(liveLastPacketId, newestId);
+
+        fresh
+            .slice(-12)
+            .forEach((packet, index) => {
+                setTimeout(() => {
+                    animateLivePacket(packet);
+                }, index * 220);
+            });
+    }
+    catch (error) {
+        console.warn("Live polling APRS:", error);
+    }
+    finally {
+        livePolling = false;
+    }
+}
+
+
+/* ============================================================
    DISEGNA TRATTA HOVER
    ============================================================ */
 
@@ -1447,711 +1884,222 @@ function drawHoverConnections(station, positionIndex) {
    AGGIORNA MAPPA
    ============================================================ */
 
-
-function analyzePath(packet) {
-
-    const raw =
-        packet.packet ||
-        packet.raw ||
-        packet.data ||
-        "";
-
-    const result = {
-        direct: true,
-        via: null,
-        internet: false,
-        path: []
-    };
-
-    const colon = raw.indexOf(":");
-
-    const header =
-        colon >= 0
-            ? raw.substring(0, colon)
-            : raw;
-
-    const gt = header.indexOf(">");
-
-    if (gt < 0) {
-        return result;
-    }
-
-    const pathText =
-        header.substring(gt + 1);
-
-    const path =
-        pathText
-            .split(",")
-            .map(x => x.trim())
-            .filter(Boolean);
-
-    result.path = path;
-
-    for (const item of path) {
-
-        const clean =
-            item
-                .replace(/\*$/, "")
-                .trim()
-                .toUpperCase();
-
-        if (
-            clean === "TCPIP" ||
-            clean === "TCPXX" ||
-            clean.startsWith("TCPIP") ||
-            clean.startsWith("TCPXX")
-        ) {
-
-            result.internet = true;
-
-            return result;
-        }
-    }
-
-    for (const item of path) {
-
-        if (item.endsWith("*")) {
-
-            result.via =
-                item.substring(
-                    0,
-                    item.length - 1
-                ).trim();
-
-            result.direct = false;
-
-            break;
-        }
-    }
-
-    return result;
-}
-
-function getSource(packet) {
-
-    return String(
-        packet.callsign ||
-        packet.source ||
-        packet.src ||
-        packet.station ||
-        ""
-    ).trim();
-}
-
-function getReceiver(packet) {
-
-    return String(
-        packet.receiver_callsign ||
-        ""
-    ).trim();
-}
-
-function getTime(packet) {
-
-    return (
-        packet.received_at ||
-        packet.timestamp ||
-        packet.time ||
-        ""
-    );
-}
-
-
-
 function updateMap(packets) {
 
-    const cutoff =
-        Date.now() -
-        selectedPeriodHours * 60 * 60 * 1000;
-
-    /*
-     * ========================================================
-     * PACCHETTI DEL SOLO RICEVITORE
-     * ========================================================
-     */
-
-    const receivedPackets =
-        packets.filter(
-            packet =>
-                getReceiver(packet).toUpperCase() ===
-                RECEIVER.toUpperCase()
-        );
-
-    /*
-     * ========================================================
-     * SOLO RICEZIONI DIRETTE
-     *
-     * Usa ESATTAMENTE analyzePath() di station.html.
-     * ========================================================
-     */
-
-    const directPackets =
-        receivedPackets.filter(packet => {
-
-            const timeValue = getTime(packet);
-            const d = new Date(timeValue);
-
-            if (isNaN(d.getTime())) {
-                return false;
-            }
-
-            if (d.getTime() < cutoff) {
-                return false;
-            }
-
-            const info = analyzePath(packet);
-
-            if (info.internet) {
-                return false;
-            }
-
-            return info.direct;
-        });
-
-    /*
-     * ========================================================
-     * RAGGRUPPA LE STAZIONI
-     *
-     * Una sola stazione per nominativo.
-     * Manteniamo il pacchetto più recente.
-     * ========================================================
-     */
+    const filteredPackets =
+        filterPacketsByPeriod(packets);
 
     const stations = {};
 
-    directPackets.forEach(packet => {
+    filteredPackets.forEach(packet => {
 
-        const callsign = getSource(packet);
+        const callsign =
+            packet.callsign ||
+            packet.source ||
+            packet.src ||
+            packet.station;
 
         if (!callsign) {
             return;
         }
 
-        const key =
-            normalizeCallsign(callsign);
+        const normCall = normalizeCallsign(callsign);
 
-        const position =
-            getPacketPosition(packet);
+        if (!stations[normCall]) {
 
-        if (!position) {
-            return;
-        }
+            const pos = getPacketPosition(packet);
 
-        const packetTime =
-            new Date(getTime(packet)).getTime();
+            /*
+             * Il filtro temporale stabilisce se la stazione
+             * deve comparire.
+             *
+             * Se il packet recente non contiene posizione
+             * o simbolo, utilizziamo l'ultimo valore valido
+             * recuperato dall'API direttamente dal database.
+             */
 
-        if (
-            !stations[key] ||
-            packetTime >
-            stations[key].time
-        ) {
+            const fallbackLat =
+                packet.last_known_latitude !== undefined &&
+                packet.last_known_latitude !== null
+                    ? Number(packet.last_known_latitude)
+                    : null;
 
-            stations[key] = {
+            const fallbackLon =
+                packet.last_known_longitude !== undefined &&
+                packet.last_known_longitude !== null
+                    ? Number(packet.last_known_longitude)
+                    : null;
 
+            stations[normCall] = {
                 callsign: callsign,
 
-                lat: position.lat,
+                lat:
+                    pos
+                        ? pos.lat
+                        : (
+                            Number.isFinite(fallbackLat)
+                                ? fallbackLat
+                                : null
+                        ),
 
-                lon: position.lon,
-
-                packet: packet,
-
-                time: packetTime,
+                lon:
+                    pos
+                        ? pos.lon
+                        : (
+                            Number.isFinite(fallbackLon)
+                                ? fallbackLon
+                                : null
+                        ),
 
                 symbol_table:
                     packet.symbol_table ||
                     packet.symbolTable ||
-                    "/",
+                    packet.last_known_symbol_table ||
+                    null,
 
                 symbol_code:
                     packet.symbol_code ||
                     packet.symbolCode ||
-                    ">"
+                    packet.last_known_symbol_code ||
+                    null,
 
+                packets: []
             };
         }
+
+        if (!stations[normCall].lat || !stations[normCall].lon) {
+            const pos = getPacketPosition(packet);
+            if (pos) {
+                stations[normCall].lat = pos.lat;
+                stations[normCall].lon = pos.lon;
+            }
+        }
+
+
+        /*
+         * SIMBOLO APRS
+         *
+         * Se il packet più recente non aveva simbolo,
+         * utilizziamo il primo packet successivo che
+         * contiene realmente symbol_table + symbol_code.
+         *
+         * Esempio IV3JBF-10:
+         *
+         * packet third-party -> nessun simbolo
+         * packet !L...&      -> L&
+         *
+         * In questo modo non viene più trasformato
+         * erroneamente nel simbolo /> (automobile).
+         */
+        if (
+            !stations[normCall].symbol_table ||
+            !stations[normCall].symbol_code
+        ) {
+
+            const packetSymbolTable =
+                packet.symbol_table ||
+                packet.symbolTable ||
+                null;
+
+            const packetSymbolCode =
+                packet.symbol_code ||
+                packet.symbolCode ||
+                null;
+
+            if (
+                packetSymbolTable &&
+                packetSymbolCode
+            ) {
+
+                stations[normCall].symbol_table =
+                    String(packetSymbolTable);
+
+                stations[normCall].symbol_code =
+                    String(packetSymbolCode);
+            }
+        }
+
+
+        stations[normCall].packets.push(packet);
+
     });
 
-    /*
-     * ========================================================
-     * RIMUOVE MARKER NON PIÙ PRESENTI
-     * ========================================================
-     */
+    Object.values(stations).forEach(station => {
+        station.packets.sort((a, b) => {
+            const ta = getPacketTime(a);
+            const tb = getPacketTime(b);
+            const va = ta ? ta.getTime() : 0;
+            const vb = tb ? tb.getTime() : 0;
+            return vb - va;
+        });
+    });
+
+    const positionIndex = buildPositionIndex(packets, stations);
+
+    lastPositionIndex = positionIndex;
+
+    const currentKeys = Object.keys(stations);
 
     Object.keys(markers).forEach(key => {
-
-        if (!stations[key]) {
-
-            map.removeLayer(
-                markers[key]
-            );
-
+        if (!currentKeys.includes(key)) {
+            map.removeLayer(markers[key]);
             delete markers[key];
         }
     });
 
-    /*
-     * ========================================================
-     * RIMUOVE LINEE NON PIÙ PRESENTI
-     * ========================================================
-     */
+    const bounds = [];
 
-    Object.keys(coverageLines).forEach(key => {
+    currentKeys.forEach(key => {
 
-        if (!stations[key]) {
+        const station = stations[key];
 
-            map.removeLayer(
-                coverageLines[key]
-            );
-
-            delete coverageLines[key];
-        }
-    });
-
-    /*
-     * ========================================================
-     * DISEGNA STAZIONI E LINEE
-     * ========================================================
-     */
-
-    const bounds = [
-        [
-            RECEIVER_LAT,
-            RECEIVER_LON
-        ]
-    ];
-
-    Object.keys(stations).forEach(key => {
-
-        const station =
-            stations[key];
-
-        const lat =
-            Number(station.lat);
-
-        const lon =
-            Number(station.lon);
-
-        if (
-            !Number.isFinite(lat) ||
-            !Number.isFinite(lon)
-        ) {
+        if (!Number.isFinite(station.lat) || !Number.isFinite(station.lon)) {
             return;
         }
 
-        const latLng =
-            [lat, lon];
-
+        const latLng = [station.lat, station.lon];
         bounds.push(latLng);
 
-        /*
-         * ----------------------------------------------------
-         * MARKER STAZIONE
-         * ----------------------------------------------------
-         */
+        const latestPacket = station.packets[0];
 
-        const icon =
-            createAPRSIcon(
-                station.callsign,
-                station.packet,
-                station
-            );
+        const icon = createAPRSIcon(
+            station.callsign,
+            latestPacket,
+            station
+        );
 
         if (markers[key]) {
 
-            markers[key].setLatLng(
-                latLng
-            );
-
-            markers[key].setIcon(
-                icon
-            );
+            markers[key].setLatLng(latLng);
+            markers[key].setIcon(icon);
 
         } else {
 
-            const marker =
-                L.marker(
-                    latLng,
-                    {
-                        icon: icon
-                    }
-                );
+            const marker = L.marker(latLng, { icon: icon });
 
-            marker.on(
-                "click",
-                () => {
+            marker.on("click", () => {
+                window.location.href = "station.html?callsign=" + encodeURIComponent(station.callsign);
+            });
 
-                    window.location.href =
-                        "station.html?callsign=" +
-                        encodeURIComponent(
-                            station.callsign
-                        );
-                }
-            );
+            marker.on("mouseover", () => {
+                drawHoverConnections(station, positionIndex);
+            });
+
+            marker.on("mouseout", () => {
+                clearHoverConnection();
+            });
 
             marker.addTo(map);
-
-            markers[key] =
-                marker;
+            markers[key] = marker;
         }
 
-        /*
-         * ----------------------------------------------------
-         * LINEA STAZIONE -> RICEVITORE
-         * ----------------------------------------------------
-         */
-
-        const linePoints = [
-            [
-                RECEIVER_LAT,
-                RECEIVER_LON
-            ],
-            [
-                lat,
-                lon
-            ]
-        ];
-
-        if (coverageLines[key]) {
-
-            coverageLines[key]
-                .setLatLngs(linePoints);
-
-        } else {
-
-            coverageLines[key] =
-                L.polyline(
-                    linePoints,
-                    {
-                        color: "#ff3333",
-                        weight: 2,
-                        opacity: 0.75,
-                        dashArray: "7,5",
-                        interactive: false
-                    }
-                ).addTo(map);
-        }
     });
 
+    updateTracks(stations);
 
-    /*
-     * ========================================================
-     * MARKER DEL RICEVITORE
-     *
-     * Viene visualizzato come una normale stazione APRS.
-     * ========================================================
-     */
-
-    let receiverPacket = null;
-
-    for (const packet of packets) {
-
-        const source =
-            getSource(packet);
-
-        if (
-            source.toUpperCase() ===
-            RECEIVER.toUpperCase()
-        ) {
-
-            const position =
-                getPacketPosition(packet);
-
-            if (position) {
-
-                receiverPacket = packet;
-                break;
-            }
-        }
-    }
-
-    /*
-     * Se il ricevitore ha trasmesso almeno un proprio
-     * pacchetto con posizione, utilizziamo il suo simbolo APRS.
-     *
-     * Altrimenti usiamo il simbolo di default.
-     */
-
-    const receiverStation = {
-
-        callsign: RECEIVER,
-
-        lat: RECEIVER_LAT,
-
-        lon: RECEIVER_LON,
-
-        symbol_table:
-            receiverPacket &&
-            (
-                receiverPacket.symbol_table ||
-                receiverPacket.symbolTable
-            )
-            || "/",
-
-        symbol_code:
-            receiverPacket &&
-            (
-                receiverPacket.symbol_code ||
-                receiverPacket.symbolCode
-            )
-            || ">",
-
-        packet:
-            receiverPacket || null
-    };
-
-    const receiverIcon =
-        createAPRSIcon(
-            RECEIVER,
-            receiverPacket,
-            receiverStation
-        );
-
-    if (markers["RECEIVER"]) {
-
-        markers["RECEIVER"]
-            .setLatLng(
-                [
-                    RECEIVER_LAT,
-                    RECEIVER_LON
-                ]
-            );
-
-        markers["RECEIVER"]
-            .setIcon(receiverIcon);
-
-    }
-    else {
-
-        const receiverMarker =
-            L.marker(
-                [
-                    RECEIVER_LAT,
-                    RECEIVER_LON
-                ],
-                {
-                    icon: receiverIcon,
-                    zIndexOffset: 2000
-                }
-            );
-
-        receiverMarker.on(
-            "click",
-            () => {
-
-                window.location.href =
-                    "station.html?callsign=" +
-                    encodeURIComponent(
-                        RECEIVER
-                    );
-            }
-        );
-
-        receiverMarker.addTo(map);
-
-        markers["RECEIVER"] =
-            receiverMarker;
-    }
-
-    bounds.push(
-        [
-            RECEIVER_LAT,
-            RECEIVER_LON
-        ]
-    );
-
-    /*
-     * ========================================================
-     * STATO
-     * ========================================================
-     */
-
-    document.getElementById("status")
-        .textContent =
-            "Dirette: " +
-            Object.keys(stations).length;
-
-    /*
-     * ========================================================
-     * ADATTA LA MAPPA ALLE STAZIONI
-     * ========================================================
-     */
-
-    if (
-        firstLoad &&
-        bounds.length > 1
-    ) {
-
-        map.fitBounds(
-            bounds,
-            {
-                padding: [60, 60]
-            }
-        );
-
+    if (firstLoad && bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [50, 50] });
         firstLoad = false;
-    }
-}
-
-
-
-
-/* ============================================================
-   RICEVITORE DINAMICO
-   ============================================================ */
-
-async function initializeReceiver() {
-
-    const response =
-        await fetch(
-            API + "/status",
-            {
-                cache: "no-store"
-            }
-        );
-
-    if (!response.ok) {
-        throw new Error(
-            "Errore API status: HTTP " +
-            response.status
-        );
-    }
-
-    const data =
-        await response.json();
-
-    const receivers =
-        Array.isArray(data.receivers)
-            ? data.receivers.filter(
-                receiver =>
-                    receiver.enabled !== false
-            )
-            : [];
-
-    const menu =
-        document.getElementById(
-            "receiverMenuContent"
-        );
-
-    if (menu) {
-
-        menu.innerHTML = "";
-
-        receivers.forEach(receiver => {
-
-            const link =
-                document.createElement("a");
-
-            link.href =
-                "coverage.html?receiver=" +
-                encodeURIComponent(
-                    receiver.callsign
-                );
-
-            link.textContent =
-                "📡 " + receiver.callsign;
-
-            menu.appendChild(link);
-        });
-    }
-
-    let selected = null;
-
-    if (REQUESTED_RECEIVER) {
-
-        selected =
-            receivers.find(
-                receiver =>
-                    String(receiver.callsign)
-                        .toUpperCase() ===
-                    String(REQUESTED_RECEIVER)
-                        .toUpperCase()
-            );
-    }
-
-    if (!selected && receivers.length > 0) {
-        selected = receivers[0];
-    }
-
-    if (!selected) {
-        throw new Error(
-            "Nessun ricevitore configurato"
-        );
-    }
-
-    RECEIVER =
-        selected.callsign;
-
-    RECEIVER_LAT =
-        Number(selected.latitude);
-
-    RECEIVER_LON =
-        Number(selected.longitude);
-
-    document.title =
-        "Copertura " +
-        RECEIVER +
-        " - LoRa APRS Maps MQTT";
-
-    const title =
-        document.getElementById(
-            "coverageReceiverTitle"
-        );
-
-    if (title) {
-        title.textContent = RECEIVER;
-    }
-
-    if (
-        !Number.isFinite(RECEIVER_LAT) ||
-        !Number.isFinite(RECEIVER_LON)
-    ) {
-
-        throw new Error(
-            "Posizione del ricevitore " +
-            RECEIVER +
-            " non disponibile. " +
-            "Verificare che nel database esista " +
-            "almeno un beacon APRS con posizione " +
-            "trasmesso dal ricevitore."
-        );
-    }
-}
-
-
-async function startCoveragePage() {
-
-    const status =
-        document.getElementById("status");
-
-    try {
-
-        if (status) {
-            status.textContent =
-                "Caricamento ricevitore...";
-        }
-
-        await initializeReceiver();
-
-        await loadPackets();
-
-        setInterval(
-            loadPackets,
-            REFRESH_INTERVAL
-        );
-
-    }
-    catch (error) {
-
-        console.error(error);
-
-        if (status) {
-            status.textContent =
-                "Errore: " +
-                error.message;
-
-            status.classList.add("error");
-        }
     }
 }
 
@@ -2167,7 +2115,11 @@ document
         loadPackets();
     });
 
-startCoveragePage();
+loadPackets();
+setInterval(loadPackets, REFRESH_INTERVAL);
+
+setTimeout(pollLivePackets, 700);
+setInterval(pollLivePackets, LIVE_POLL_INTERVAL);
 
 </script>
 
