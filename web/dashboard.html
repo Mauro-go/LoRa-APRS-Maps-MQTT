@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>LoRa APRS Monitor</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0f172a;
+    color: #e5e7eb;
+}
+
+header {
+    background: #111827;
+    padding: 20px 30px;
+    border-bottom: 1px solid #334155;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 6px 0 0;
+    color: #94a3b8;
+}
+
+.container {
+    max-width: 1500px;
+    margin: auto;
+    padding: 25px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.card-title {
+    color: #94a3b8;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.card-value {
+    font-size: 32px;
+    font-weight: bold;
+}
+
+.receivers {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-bottom: 25px;
+}
+
+.receiver {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.receiver-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.receiver-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.coverage-button,
+.home-button {
+    display: inline-block;
+    color: white;
+    text-decoration: none;
+    padding: 6px 10px;
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.coverage-button:hover,
+.home-button:hover {
+    background: #475569;
+}
+
+.header-actions {
+    margin-top: 12px;
+}
+
+.receiver-name {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #64748b;
+}
+
+.dot.active {
+    background: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+}
+
+.receiver-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.receiver-stat {
+    background: #0f172a;
+    border-radius: 7px;
+    padding: 12px;
+}
+
+.receiver-stat-title {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.receiver-stat-value {
+    margin-top: 5px;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+.section {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.section h2 {
+    margin-top: 0;
+    font-size: 20px;
+}
+
+.station-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+.station-column {
+    min-width: 0;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.station-column-title {
+    padding: 13px 15px;
+    background: #111827;
+    border-bottom: 1px solid #334155;
+    font-size: 17px;
+    font-weight: bold;
+}
+.station-column-title .station-count {
+    margin-left: 7px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: normal;
+}
+.station-table-wrap { overflow-x: auto; }
+@media (max-width: 900px) {
+    .station-columns { grid-template-columns: 1fr; }
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 10px;
+    border-bottom: 1px solid #334155;
+}
+
+td {
+    padding: 10px;
+    border-bottom: 1px solid #273449;
+    font-size: 14px;
+}
+
+tr:hover {
+    background: #263449;
+}
+
+.callsign {
+    font-weight: bold;
+    color: #38bdf8;
+}
+
+.packet {
+    font-family: monospace;
+    font-size: 12px;
+    color: #cbd5e1;
+    word-break: break-all;
+}
+
+.time {
+    white-space: nowrap;
+    color: #94a3b8;
+}
+
+footer {
+    text-align: center;
+    color: #64748b;
+    font-size: 12px;
+    padding: 20px;
+}
+
+.error {
+    background: #450a0a;
+    border: 1px solid #991b1b;
+    color: #fecaca;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: none;
+}
+
+@media (max-width: 900px) {
+
+    .cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .receivers {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+    .container {
+        padding: 12px;
+    }
+
+    table {
+        font-size: 12px;
+    }
+
+    th,
+    td {
+        padding: 7px;
+    }
+}
+
+
+/* ======================================================
+   LINGUA IT / EN
+   ====================================================== */
+.lang-en { display: none; }
+html[data-lang="en"] .lang-it { display: none !important; }
+html[data-lang="en"] .lang-en { display: inline !important; }
+
+.language-select {
+    background: #334155;
+    color: white;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    margin-left: 8px;
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+    <h1>📡 LoRa APRS Monitor</h1>
+
+    <p>
+        <span class="lang-it">Monitoraggio ricevitori LoRa APRS via MQTT</span>
+        <span class="lang-en">LoRa APRS receiver monitoring via MQTT</span>
+    </p>
+
+    <div class="header-actions">
+        <a href="index.html" class="home-button">
+            🏠 Home
+        </a>
+
+        <select
+            id="languageSelect"
+            class="language-select"
+            title="Lingua / Language"
+        >
+            <option value="it">🇮🇹 IT</option>
+            <option value="en">🇬🇧 EN</option>
+        </select>
+    </div>
+
+</header>
+
+
+<div class="container">
+
+    <div id="error" class="error"></div>
+
+
+    <!-- STATISTICHE GENERALI -->
+
+    <div class="cards">
+
+        <div class="card">
+
+            <div class="card-title">
+                <span class="lang-it">Pacchetti totali</span><span class="lang-en">Total packets</span>
+            </div>
+
+            <div
+                class="card-value"
+                id="totalPackets">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                <span class="lang-it">Stazioni uniche</span><span class="lang-en">Unique stations</span>
+            </div>
+
+            <div
+                class="card-value"
+                id="uniqueStations">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                <span class="lang-it">Pacchetti ultime 24h</span><span class="lang-en">Packets last 24h</span>
+            </div>
+
+            <div
+                class="card-value"
+                id="packets24h">
+                -
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                <span class="lang-it">Ricevitori attivi</span><span class="lang-en">Active receivers</span>
+            </div>
+
+            <div
+                class="card-value"
+                id="activeReceivers">
+                -
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- RICEVITORI -->
+
+    <div class="receivers" id="receivers">
+
+    </div>
+
+
+    <!-- STAZIONI PER RICEVITORE -->
+
+    <div class="section">
+        <h2>📻 <span class="lang-it">Stazioni ricevute per ricevitore</span><span class="lang-en">Stations received by receiver</span></h2>
+
+        <div
+            class="station-columns"
+            id="stationColumns"
+        >
+        </div>
+    </div>
+
+
+    <!-- ULTIMI PACCHETTI -->
+
+    <div class="section">
+
+        <h2>📦 <span class="lang-it">Ultimi pacchetti</span><span class="lang-en">Latest packets</span></h2>
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th><span class="lang-it">Ora</span><span class="lang-en">Time</span></th>
+                    <th><span class="lang-it">Ricevitore</span><span class="lang-en">Receiver</span></th>
+                    <th>Callsign</th>
+                    <th>Packet</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody id="packetsTable">
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<footer>
+
+    LoRa APRS Monitor —
+    <span class="lang-it">aggiornamento automatico ogni 10 secondi</span>
+    <span class="lang-en">automatic refresh every 10 seconds</span>
+
+</footer>
+
+
+<script>
+
+const API = "/lora-api";
+
+let currentLanguage =
+    localStorage.getItem("lora-aprs-language") === "en"
+        ? "en"
+        : "it";
+
+
+function t(it, en) {
+    return currentLanguage === "en" ? en : it;
+}
+
+
+function applyLanguage(language) {
+
+    currentLanguage =
+        language === "en"
+            ? "en"
+            : "it";
+
+    document.documentElement.dataset.lang =
+        currentLanguage;
+
+    document.documentElement.lang =
+        currentLanguage;
+
+    localStorage.setItem(
+        "lora-aprs-language",
+        currentLanguage
+    );
+
+    const languageSelect =
+        document.getElementById("languageSelect");
+
+    if (languageSelect) {
+        languageSelect.value =
+            currentLanguage;
+    }
+}
+
+
+applyLanguage(currentLanguage);
+
+
+
+
+function escapeHtml(value) {
+
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+
+function formatTime(timestamp) {
+
+    if (!timestamp) {
+        return "-";
+    }
+
+    const date = new Date(timestamp);
+
+    return date.toLocaleString(
+        currentLanguage === "en"
+            ? "en-GB"
+            : "it-IT"
+    );
+}
+
+
+function showError(message) {
+
+    const element =
+        document.getElementById("error");
+
+    element.textContent = message;
+
+    element.style.display = "block";
+}
+
+
+function hideError() {
+
+    document.getElementById("error")
+        .style.display = "none";
+}
+
+
+async function loadStats() {
+
+    const response =
+        await fetch(API + "/stats");
+
+    if (!response.ok) {
+        throw new Error("Errore API stats");
+    }
+
+    const data =
+        await response.json();
+
+    document.getElementById("totalPackets")
+        .textContent = data.total_packets;
+
+    document.getElementById("uniqueStations")
+        .textContent = data.unique_stations;
+
+    document.getElementById("packets24h")
+        .textContent = data.packets_24h;
+}
+
+
+async function loadStatus() {
+
+    const response =
+        await fetch(API + "/status");
+
+    if (!response.ok) {
+        throw new Error("Errore API status");
+    }
+
+    const data =
+        await response.json();
+
+    const container =
+        document.getElementById("receivers");
+
+    container.innerHTML = "";
+
+    let active = 0;
+
+    data.receivers.forEach(receiver => {
+
+        const hasData =
+            receiver.packets > 0;
+
+        if (hasData) {
+            active++;
+        }
+
+        const html = `
+
+            <div class="receiver">
+
+                <div class="receiver-header">
+
+                    <div class="receiver-name">
+                        📡 ${escapeHtml(receiver.callsign)}
+                    </div>
+
+                    <div class="receiver-actions">
+
+                        <a
+                            class="coverage-button"
+                            href="coverage.html?receiver=${encodeURIComponent(receiver.callsign)}"
+                        >
+                            ${t("🗺️ Mappa Copertura", "🗺️ Coverage Map")}
+                        </a>
+
+                        <div class="status">
+
+                            <span class="dot ${
+                                hasData ? "active" : ""
+                            }"></span>
+
+                            ${
+                                hasData
+                                ? t("Attivo", "Active")
+                                : t("In attesa", "Waiting")
+                            }
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="receiver-stats">
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            ${t("Pacchetti", "Packets")}
+                        </div>
+
+                        <div class="receiver-stat-value">
+                            ${receiver.packets}
+                        </div>
+
+                    </div>
+
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            ${t("Stazioni", "Stations")}
+                        </div>
+
+                        <div class="receiver-stat-value">
+                            ${receiver.stations}
+                        </div>
+
+                    </div>
+
+
+                    <div class="receiver-stat">
+
+                        <div class="receiver-stat-title">
+                            ${t("Ultimo pacchetto", "Last packet")}
+                        </div>
+
+                        <div class="receiver-stat-value"
+                             style="font-size:13px">
+
+                            ${
+                                formatTime(
+                                    receiver.last_packet
+                                )
+                            }
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        `;
+
+        container.innerHTML += html;
+
+    });
+
+    document.getElementById("activeReceivers")
+        .textContent = active;
+}
+
+
+async function loadStations() {
+
+    const statusResponse =
+        await fetch(API + "/status");
+
+    if (!statusResponse.ok) {
+        throw new Error("Errore API status");
+    }
+
+    const statusData =
+        await statusResponse.json();
+
+    const receivers =
+        Array.isArray(statusData.receivers)
+            ? statusData.receivers
+            : [];
+
+    const columns =
+        document.getElementById("stationColumns");
+
+    columns.innerHTML = "";
+
+    await Promise.all(
+        receivers.map(
+            async (receiver, index) => {
+
+                const callsign =
+                    receiver.callsign || "";
+
+                if (!callsign) {
+                    return;
+                }
+
+                const columnId =
+                    "receiverStations_" + index;
+
+                const countId =
+                    "receiverStationCount_" + index;
+
+                columns.insertAdjacentHTML(
+                    "beforeend",
+                    `
+                    <div class="station-column">
+
+                        <div class="station-column-title">
+                            📡 ${escapeHtml(callsign)}
+                            <span
+                                class="station-count"
+                                id="${countId}"
+                            ></span>
+                        </div>
+
+                        <div class="station-table-wrap">
+
+                            <table>
+
+                                <thead>
+                                    <tr>
+                                        <th>Callsign</th>
+                                        <th><span class="lang-it">Pacchetti</span><span class="lang-en">Packets</span></th>
+                                        <th><span class="lang-it">Ultimo ascolto</span><span class="lang-en">Last heard</span></th>
+                                    </tr>
+                                </thead>
+
+                                <tbody id="${columnId}">
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                    </div>
+                    `
+                );
+
+                const response =
+                    await fetch(
+                        API +
+                        "/stations?receiver=" +
+                        encodeURIComponent(callsign) +
+                        "&limit=500"
+                    );
+
+                if (!response.ok) {
+                    throw new Error(
+                        "Errore API stations " +
+                        callsign
+                    );
+                }
+
+                const data =
+                    await response.json();
+
+                const stations =
+                    Array.isArray(data.stations)
+                        ? data.stations
+                        : [];
+
+                const table =
+                    document.getElementById(
+                        columnId
+                    );
+
+                const count =
+                    document.getElementById(
+                        countId
+                    );
+
+                if (!table || !count) {
+                    return;
+                }
+
+                table.innerHTML = "";
+
+                count.textContent =
+                    "(" +
+                    stations.length +
+                    " " +
+                    t("stazioni", "stations") +
+                    ")";
+
+                stations.forEach(
+                    station => {
+
+                        table.innerHTML += `
+                            <tr>
+
+                                <td class="callsign">
+                                    ${escapeHtml(
+                                        station.callsign
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${station.packets}
+                                </td>
+
+                                <td class="time">
+                                    ${formatTime(
+                                        station.last_seen
+                                    )}
+                                </td>
+
+                            </tr>
+                        `;
+                    }
+                );
+            }
+        )
+    );
+}
+
+
+async function loadPackets() {
+
+    const response =
+        await fetch(API + "/packets?limit=50");
+
+    if (!response.ok) {
+        throw new Error("Errore API packets");
+    }
+
+    const data =
+        await response.json();
+
+    const table =
+        document.getElementById("packetsTable");
+
+    table.innerHTML = "";
+
+    data.packets.forEach(packet => {
+
+        table.innerHTML += `
+
+            <tr>
+
+                <td class="time">
+                    ${formatTime(packet.timestamp)}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        packet.receiver_callsign
+                    )}
+                </td>
+
+                <td class="callsign">
+                    ${escapeHtml(
+                        packet.callsign
+                    )}
+                </td>
+
+                <td class="packet">
+                    ${escapeHtml(
+                        packet.packet
+                    )}
+                </td>
+
+            </tr>
+
+        `;
+
+    });
+}
+
+
+async function refresh() {
+
+    try {
+
+        hideError();
+
+        await Promise.all([
+            loadStats(),
+            loadStatus(),
+            loadStations(),
+            loadPackets()
+        ]);
+
+    } catch (error) {
+
+        console.error(error);
+
+        showError(
+            t(
+                "Impossibile collegarsi all'API LoRa APRS",
+                "Unable to connect to the LoRa APRS API"
+            )
+        );
+
+    }
+
+}
+
+
+
+const languageSelect =
+    document.getElementById("languageSelect");
+
+if (languageSelect) {
+    languageSelect.addEventListener(
+        "change",
+        () => {
+            applyLanguage(
+                languageSelect.value
+            );
+            refresh();
+        }
+    );
+}
+
+
+refresh();
+
+setInterval(
+    refresh,
+    10000
+);
+
+</script>
+
+</body>
+</html>
