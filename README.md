@@ -201,6 +201,14 @@ The MQTT broker may run on the same server or on another machine.
 
 ## Installation
 
+**Manual installation:** Follow the instructions in `docs/INSTALL_IT.md` or `docs/INSTALL_EN.md`.
+
+**Automatic installation:** Download `docs/install.sh`, make it executable, and run it as root:
+
+```bash
+chmod +x install.sh
+./install.sh
+
 A complete step-by-step installation guide is being prepared.
 
 The goal for the first public release is to allow a radio amateur to install the complete system by:
