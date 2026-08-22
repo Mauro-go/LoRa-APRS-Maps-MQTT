@@ -2038,6 +2038,53 @@ function updateTracks(stations) {
                 }
             );
 
+
+            /*
+             * VELOCITA MARKER PRINCIPALE
+             *
+             * Se il backend/APRS non fornisce una velocita',
+             * utilizziamo quella calcolata sull'ultimo segmento
+             * della traccia.
+             *
+             * In questo modo il popup del marker principale
+             * mostra la stessa velocita' disponibile sull'ultimo
+             * punto verde.
+             */
+
+            const latestTrackPoint =
+                uniquePositionedPackets[
+                    uniquePositionedPackets.length - 1
+                ];
+
+            const stationAprsSpeed =
+                station.speed_kmh !== null &&
+                station.speed_kmh !== undefined
+                    ? Number(station.speed_kmh)
+                    : NaN;
+
+            const calculatedLatestSpeed =
+                latestTrackPoint &&
+                latestTrackPoint.displaySpeedKmh !== null &&
+                latestTrackPoint.displaySpeedKmh !== undefined
+                    ? Number(
+                        latestTrackPoint.displaySpeedKmh
+                    )
+                    : NaN;
+
+            if (
+                !Number.isFinite(stationAprsSpeed) &&
+                Number.isFinite(calculatedLatestSpeed)
+            ) {
+
+                station.speed_kmh =
+                    calculatedLatestSpeed;
+
+                station.speed_source =
+                    latestTrackPoint.speedSource ||
+                    "CALCULATED";
+            }
+
+
             const latLngs =
                 uniquePositionedPackets.map(item => [
                     item.position.lat,

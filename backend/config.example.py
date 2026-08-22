@@ -28,7 +28,6 @@ MQTT_TOPIC = "lora_aprs/+/#"
 API_HOST = "127.0.0.1"
 API_PORT = 8080
 
-# Numero massimo di pacchetti restituiti quando si usa ?hours=
 MAX_HISTORY_PACKETS = 50000
 
 
@@ -36,25 +35,15 @@ MAX_HISTORY_PACKETS = 50000
 # RICEVITORI
 # ============================================================
 #
-# RX1, RX2, RX3... sono identificatori interni.
-# NON modificare i nomi RX1, RX2, ecc.
+# RX1, RX2, RX3... corrispondono al nome del ricevitore
+# presente nel topic MQTT:
 #
-# Inserire solamente il callsign APRS completo del ricevitore.
+#     lora_aprs/RX1/...
+#     lora_aprs/RX2/...
 #
-# Esempio:
+# NON modificare RX1, RX2, ecc.
 #
-# "RX1": {
-#     "callsign": "IV3XXX-10",
-#     "enabled": True,
-# },
-#
-# Il collector ricava automaticamente il nome MQTT dal callsign:
-#
-# IV3XXX-10 -> IV3XXX
-#
-# e associa quindi il topic:
-#
-# lora_aprs/IV3XXX/...
+# Per ogni ricevitore inserire soltanto il callsign APRS completo.
 #
 # ============================================================
 
