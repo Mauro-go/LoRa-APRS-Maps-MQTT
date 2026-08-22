@@ -2889,15 +2889,68 @@ function updateMap(packets) {
                         ? Number(packet.speed_kmh)
                         : null,
 
+                /*
+                 * Timestamp della posizione attualmente
+                 * utilizzata dal marker principale.
+                 */
+                position_time:
+                    (() => {
+                        const d = getPacketTime(packet);
+                        return d ? d.getTime() : 0;
+                    })(),
+
                 packets: []
             };
         }
 
-        if (!stations[normCall].lat || !stations[normCall].lon) {
-            const pos = getPacketPosition(packet);
-            if (pos) {
-                stations[normCall].lat = pos.lat;
-                stations[normCall].lon = pos.lon;
+        /*
+         * POSIZIONE MARKER PRINCIPALE
+         *
+         * I packet provenienti da /tracks e /map vengono
+         * combinati nello stesso array.
+         *
+         * Non possiamo quindi usare semplicemente il primo
+         * packet incontrato: aumentando il periodo storico
+         * potrebbe essere un vecchio punto della traccia.
+         *
+         * Il marker principale deve sempre rappresentare
+         * la posizione cronologicamente più recente.
+         */
+        {
+            const pos =
+                getPacketPosition(packet);
+
+            const packetDate =
+                getPacketTime(packet);
+
+            const packetTime =
+                packetDate
+                    ? packetDate.getTime()
+                    : 0;
+
+            if (
+                pos &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            stations[normCall].position_time
+                        )
+                    ) ||
+                    packetTime >=
+                        Number(
+                            stations[normCall].position_time
+                        )
+                )
+            ) {
+
+                stations[normCall].lat =
+                    pos.lat;
+
+                stations[normCall].lon =
+                    pos.lon;
+
+                stations[normCall].position_time =
+                    packetTime;
             }
         }
 
