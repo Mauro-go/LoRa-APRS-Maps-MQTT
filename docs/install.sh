@@ -9,11 +9,14 @@ set -Eeuo pipefail
 APP_DIR="/opt/lora-aprs"
 BACKEND_DIR="${APP_DIR}/backend"
 DATA_DIR="${APP_DIR}/data"
+MAINTENANCE_DIR="${APP_DIR}/maintenance"
 WEB_DIR="/var/www/html/lora-aprs"
 SYMBOL_DIR="/var/www/html/aprs-symbols"
 
 COLLECTOR_SERVICE="lora-aprs-collector.service"
 API_SERVICE="lora-aprs-api.service"
+DBMAINT_SERVICE="lora-aprs-dbmaintenance.service"
+DBMAINT_TIMER="lora-aprs-dbmaintenance.timer"
 APACHE_CONF_NAME="lora-aprs"
 
 MQTT_TOPIC="lora_aprs/+/#"
@@ -130,6 +133,9 @@ required_files=(
     "web/coverage.html"
     "systemd/lora-aprs-collector.service"
     "systemd/lora-aprs-api.service"
+    "maintenance/dbmaintenance.sh"
+    "systemd/lora-aprs-dbmaintenance.service"
+    "systemd/lora-aprs-dbmaintenance.timer"
     "apache/lora-aprs.conf"
 )
 
@@ -289,7 +295,7 @@ yes_no "Start installation?" "Y" || {
 # ============================================================
 
 echo
-echo "[1/9] Installing required Debian packages..."
+echo "[1/10] Installing required Debian packages..."
 
 apt-get update
 
@@ -315,7 +321,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 # ============================================================
 
 echo
-echo "[2/9] Installing backend files..."
+echo "[2/10] Installing backend files..."
 
 mkdir -p "${BACKEND_DIR}" "${DATA_DIR}"
 
@@ -340,7 +346,7 @@ fi
 # ============================================================
 
 echo
-echo "[3/9] Creating backend configuration..."
+echo "[3/10] Creating backend configuration..."
 
 MQTT_HOST_PY="$(printf '%s' "${MQTT_HOST}" | python_repr)"
 MQTT_USER_PY="$(printf '%s' "${MQTT_USER}" | python_repr)"
@@ -395,7 +401,7 @@ python3 -m py_compile "${BACKEND_DIR}/config.py"
 # ============================================================
 
 echo
-echo "[4/9] Configuring MQTT broker..."
+echo "[4/10] Configuring MQTT broker..."
 
 if [[ "${INSTALL_LOCAL_MQTT}" == "yes" ]]; then
     mkdir -p /etc/mosquitto/conf.d
@@ -433,7 +439,7 @@ fi
 # ============================================================
 
 echo
-echo "[5/9] Installing web interface..."
+echo "[5/10] Installing web interface..."
 
 mkdir -p "${WEB_DIR}"
 cp -a "${SOURCE_DIR}/web/." "${WEB_DIR}/"
@@ -446,7 +452,7 @@ find "${WEB_DIR}" -type f -exec chmod 644 {} \;
 # ============================================================
 
 echo
-echo "[6/9] Installing APRS symbol library..."
+echo "[6/10] Installing APRS symbol library..."
 
 rm -rf /tmp/lora-aprs-symbols-install
 git clone --depth 1 \
@@ -472,11 +478,26 @@ shopt -u nullglob
 chmod 755 "${SYMBOL_DIR}"
 
 # ============================================================
+# Database maintenance
+# ============================================================
+
+echo
+echo "[7/10] Installing database maintenance..."
+
+mkdir -p "${MAINTENANCE_DIR}"
+
+install -m 750 \
+    "${SOURCE_DIR}/maintenance/dbmaintenance.sh" \
+    "${MAINTENANCE_DIR}/dbmaintenance.sh"
+
+chmod 755 "${MAINTENANCE_DIR}"
+
+# ============================================================
 # systemd services
 # ============================================================
 
 echo
-echo "[7/9] Installing systemd services..."
+echo "[8/10] Installing systemd services..."
 
 install -m 644 \
     "${SOURCE_DIR}/systemd/lora-aprs-collector.service" \
@@ -486,8 +507,19 @@ install -m 644 \
     "${SOURCE_DIR}/systemd/lora-aprs-api.service" \
     "/etc/systemd/system/${API_SERVICE}"
 
+install -m 644 \
+    "${SOURCE_DIR}/systemd/lora-aprs-dbmaintenance.service" \
+    "/etc/systemd/system/${DBMAINT_SERVICE}"
+
+install -m 644 \
+    "${SOURCE_DIR}/systemd/lora-aprs-dbmaintenance.timer" \
+    "/etc/systemd/system/${DBMAINT_TIMER}"
+
 systemctl daemon-reload
+
 systemctl enable "${COLLECTOR_SERVICE}" "${API_SERVICE}"
+systemctl enable --now "${DBMAINT_TIMER}"
+
 systemctl restart "${COLLECTOR_SERVICE}"
 systemctl restart "${API_SERVICE}"
 
@@ -504,7 +536,7 @@ done
 # ============================================================
 
 echo
-echo "[8/9] Configuring Apache..."
+echo "[9/10] Configuring Apache..."
 
 a2enmod proxy >/dev/null
 a2enmod proxy_http >/dev/null
@@ -523,16 +555,18 @@ systemctl reload apache2
 # ============================================================
 
 echo
-echo "[9/9] Running final checks..."
+echo "[10/10] Running final checks..."
 
 collector_ok="no"
 api_ok="no"
+db_timer_ok="no"
 proxy_ok="no"
 symbol_ok="no"
 web_ok="no"
 
 systemctl is-active --quiet "${COLLECTOR_SERVICE}" && collector_ok="yes"
 systemctl is-active --quiet "${API_SERVICE}" && api_ok="yes"
+systemctl is-active --quiet "${DBMAINT_TIMER}" && db_timer_ok="yes"
 
 curl -fsS "http://127.0.0.1:${API_PORT}/api/status" >/dev/null 2>&1 \
     && api_ok="yes"
@@ -558,12 +592,14 @@ echo
 echo "Services:"
 printf '  %-32s %s\n' "${COLLECTOR_SERVICE}" "$(service_state "${COLLECTOR_SERVICE}")"
 printf '  %-32s %s\n' "${API_SERVICE}" "$(service_state "${API_SERVICE}")"
+printf '  %-32s %s\n' "${DBMAINT_TIMER}" "$(service_state "${DBMAINT_TIMER}")"
 if [[ "${INSTALL_LOCAL_MQTT}" == "yes" ]]; then
     printf '  %-32s %s\n' "mosquitto.service" "$(service_state mosquitto.service)"
 fi
 echo
 echo "Checks:"
 printf '  %-22s %s\n' "API direct" "${api_ok}"
+printf '  %-22s %s\n' "Database timer" "${db_timer_ok}"
 printf '  %-22s %s\n' "Apache API proxy" "${proxy_ok}"
 printf '  %-22s %s\n' "APRS symbols" "${symbol_ok}"
 printf '  %-22s %s\n' "Web interface" "${web_ok}"
@@ -595,13 +631,15 @@ echo "IMPORTANT: Do not publish config.py if it contains MQTT credentials."
 echo "============================================================"
 
 if [[ "${collector_ok}" != "yes" || "${api_ok}" != "yes" || \
-      "${proxy_ok}" != "yes" || "${symbol_ok}" != "yes" || \
-      "${web_ok}" != "yes" ]]; then
+      "${db_timer_ok}" != "yes" || "${proxy_ok}" != "yes" || \
+      "${symbol_ok}" != "yes" || "${web_ok}" != "yes" ]]; then
     echo
     echo "One or more checks did not pass."
     echo "Useful diagnostics:"
     echo "  journalctl -u ${COLLECTOR_SERVICE} -n 100 --no-pager"
     echo "  journalctl -u ${API_SERVICE} -n 100 --no-pager"
+    echo "  systemctl status ${DBMAINT_TIMER} --no-pager"
+    echo "  journalctl -u ${DBMAINT_SERVICE} -n 100 --no-pager"
     echo "  apache2ctl configtest"
     exit 2
 fi
