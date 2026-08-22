@@ -10,8 +10,34 @@ The project collects APRS packets received by one or more LoRa iGates, stores th
 
 The project was created in the spirit of amateur radio experimentation and sharing.
 
-> **Project status:** under active development.  
-> The first public release and installation documentation are currently being prepared.
+> **Current release: v2.0**
+>
+> Stable version released in August 2026.  
+> Future updates and major changes will be listed in the Version history below.
+
+
+---
+
+## Version history
+
+### v2.0 — August 2026
+
+Major update of **LoRa APRS Maps MQTT**.
+
+- Dynamic configuration for multiple LoRa APRS receivers
+- Improved APRS packet parsing and position handling
+- Support for compressed, uncompressed and timestamped APRS positions
+- Improved APRS symbols and overlays
+- Interactive station map with reception paths
+- Direct and digipeated reception visualization
+- Station information extracted from APRS packets
+- Mobile station tracks and speed information
+- Dynamic coverage maps for configured receivers
+- Station and receiver hover popups
+- Improved station details and statistics
+- Italian / English interface
+- Improved API structure and performance
+- Configuration separated from application code
 
 ---
 
