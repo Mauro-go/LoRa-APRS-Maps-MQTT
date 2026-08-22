@@ -1,0 +1,7 @@
+[Unit]
+Description=LoRa APRS Maps MQTT - Database Maintenance
+After=lora-aprs-api.service lora-aprs-collector.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lora-aprs/maintenance/dbmaintenance.sh
