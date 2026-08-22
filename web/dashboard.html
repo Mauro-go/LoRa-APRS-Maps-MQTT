@@ -851,9 +851,19 @@ async function loadStations() {
                             <tr>
 
                                 <td class="callsign">
-                                    ${escapeHtml(
-                                        station.callsign
-                                    )}
+                                    <a
+                                        href="station.html?callsign=${encodeURIComponent(station.callsign)}"
+                                        style="
+                                            color:inherit;
+                                            text-decoration:none;
+                                            font-weight:600;
+                                        "
+                                        title="${t("Apri dettagli stazione", "Open station details")}"
+                                    >
+                                        ${escapeHtml(
+                                            station.callsign
+                                        )}
+                                    </a>
                                 </td>
 
                                 <td>

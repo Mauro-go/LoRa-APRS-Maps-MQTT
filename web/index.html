@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LoRa APRS by IV3SCP</title>
+<title>LoRa APRS Maps MQTT</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
@@ -62,8 +62,24 @@ body {
 }
 
 .status {
+    display: inline-block;
+    flex: 0 0 205px;
+    width: 205px;
+
+    margin-left: 8px;
+
     font-size: 11px;
     color: #8fd18f;
+    text-align: left;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.topbar-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
 }
 
 .status.error {
@@ -362,7 +378,7 @@ html[data-lang="en"] .lang-en { display: inline !important; }
     <div>
 
         <span class="title">
-            📡 LoRa APRS by IV3SCP
+            📡 LoRa APRS Maps MQTT
             <a href="https://github.com/Mauro-go/LoRa-APRS-Maps-MQTT"
                target="_blank"
                rel="noopener noreferrer"
@@ -382,7 +398,7 @@ html[data-lang="en"] .lang-en { display: inline !important; }
 
     </div>
 
-    <div>
+    <div class="topbar-controls">
 
         <a
             href="dashboard.html"
@@ -404,16 +420,10 @@ html[data-lang="en"] .lang-en { display: inline !important; }
                 📡 <span class="lang-it">Ricevitori</span><span class="lang-en">Receivers</span> ▾
             </span>
 
-            <div class="receiver-menu-content">
-
-                <a href="coverage.html?receiver=IQ3GO-12">
-                    📡 IQ3GO-12
-                </a>
-
-                <a href="coverage.html?receiver=IV3SCP-10">
-                    📡 IV3SCP-10
-                </a>
-
+            <div
+                id="receiverMenuContent"
+                class="receiver-menu-content"
+            >
             </div>
 
         </div>
@@ -516,6 +526,7 @@ const SYMBOL_PATH = "/aprs-symbols/";
 const UPDATE_OVERLAY_DELAY = 5000;
 let updateOverlayTimer = null;
 let activePacketLoads = 0;
+let packetLoadInProgress = false;
 
 function beginDelayedUpdateOverlay() {
     activePacketLoads += 1;
@@ -1086,10 +1097,137 @@ function getReceivedDescription(packet) {
    CARICAMENTO PACCHETTI
    ============================================================ */
 
+function makeV2SyntheticPacket(
+    callsign,
+    timestamp,
+    latitude,
+    longitude,
+    receiver,
+    type,
+    via,
+    radioPath,
+    symbolTable,
+    symbolCode,
+    packetId,
+    info,
+    speedKmh
+) {
+
+    const call =
+        String(callsign || "").trim();
+
+    const rx =
+        String(receiver || "").trim();
+
+    const digis =
+        Array.isArray(via)
+            ? via
+            : [];
+
+    /*
+     * Costruiamo soltanto un header APRS compatibile
+     * con le vecchie funzioni grafiche.
+     *
+     * NON viene usato per interpretare il vero packet:
+     * DIRECT/VIA è già stato deciso dal backend V2.
+     */
+
+    let path = "";
+
+    if (
+        type === "VIA" &&
+        digis.length
+    ) {
+
+        path =
+            "," +
+            digis
+                .map(x => String(x) + "*")
+                .join(",");
+    }
+
+    else {
+
+        path = ",WIDE1-1";
+    }
+
+    return {
+
+        id:
+            packetId,
+
+        callsign:
+            call,
+
+        timestamp:
+            timestamp,
+
+        received_at:
+            timestamp,
+
+        receiver:
+            rx,
+
+        receiver_callsign:
+            rx,
+
+        latitude:
+            latitude,
+
+        longitude:
+            longitude,
+
+        symbol_table:
+            symbolTable || null,
+
+        symbol_code:
+            symbolCode || null,
+
+        info:
+            info || null,
+
+        speed_kmh:
+            speedKmh !== undefined &&
+            speedKmh !== null
+                ? Number(speedKmh)
+                : null,
+
+        /*
+         * Dati V2 originali disponibili anche al frontend.
+         */
+        reception_type:
+            type,
+
+        via:
+            digis,
+
+        radio_path:
+            Array.isArray(radioPath)
+                ? radioPath
+                : [],
+
+        /*
+         * Compatibilità V1 per getPacketRoute().
+         */
+        packet:
+            call +
+            ">APV200" +
+            path +
+            ":"
+    };
+}
+
+
 async function loadPackets() {
 
     const status =
         document.getElementById("status");
+
+    if (packetLoadInProgress) {
+        return;
+    }
+
+    packetLoadInProgress = true;
 
     beginDelayedUpdateOverlay();
 
@@ -1100,63 +1238,277 @@ async function loadPackets() {
 
         status.classList.remove("error");
 
-        const response =
-            await fetch(
-                API + "/packets?limit=500",
+        const hours =
+            selectedPeriodHours;
+
+        /*
+         * Le due richieste partono contemporaneamente.
+         */
+
+        const [
+            mapResponse,
+            tracksResponse
+        ] = await Promise.all([
+
+            fetch(
+                API +
+                "/map?hours=" +
+                encodeURIComponent(hours),
                 {
                     cache: "no-store"
                 }
-            );
+            ),
 
-        if (!response.ok) {
+            fetch(
+                API +
+                "/tracks?hours=" +
+                encodeURIComponent(hours),
+                {
+                    cache: "no-store"
+                }
+            )
+        ]);
 
+        if (!mapResponse.ok) {
             throw new Error(
-                "HTTP " + response.status
+                "MAP HTTP " +
+                mapResponse.status
             );
         }
 
-        const data =
-            await response.json();
-
-        let packets;
-
-        if (Array.isArray(data)) {
-            packets = data;
+        if (!tracksResponse.ok) {
+            throw new Error(
+                "TRACKS HTTP " +
+                tracksResponse.status
+            );
         }
 
-        else if (Array.isArray(data.packets)) {
-            packets = data.packets;
+        const mapData =
+            await mapResponse.json();
+
+        const tracksData =
+            await tracksResponse.json();
+
+        const packets = [];
+
+        const stationByCall =
+            new Map();
+
+        /*
+         * Indicizziamo i dati delle stazioni.
+         */
+
+        for (
+            const station
+            of mapData.stations || []
+        ) {
+
+            stationByCall.set(
+                normalizeCallsign(
+                    station.callsign
+                ),
+                station
+            );
         }
 
-        else if (Array.isArray(data.data)) {
-            packets = data.data;
+
+        /*
+         * 1. PUNTI STORICI
+         *
+         * Questi alimentano direttamente updateTracks()
+         * della vecchia V1.
+         */
+
+        for (
+            const [callsign, points]
+            of Object.entries(
+                tracksData.tracks || {}
+            )
+        ) {
+
+            const station =
+                stationByCall.get(
+                    normalizeCallsign(callsign)
+                );
+
+            for (const point of points) {
+
+                packets.push(
+                    makeV2SyntheticPacket(
+
+                        callsign,
+
+                        point.timestamp,
+
+                        point.latitude,
+
+                        point.longitude,
+
+                        point.receiver,
+
+                        point.type,
+
+                        point.via,
+
+                        point.radio_path,
+
+                        station
+                            ? station.symbol_table
+                            : null,
+
+                        station
+                            ? station.symbol_code
+                            : null,
+
+                        point.packet_id,
+
+                        station
+                            ? station.info
+                            : null,
+
+                        point.speed_kmh
+                    )
+                );
+            }
         }
 
-        else {
-            packets = [];
+
+        /*
+         * 2. ULTIMA POSIZIONE DI OGNI STAZIONE
+         *
+         * Serve anche alle stazioni fisse, che non hanno
+         * una vera traccia e quindi non compaiono in /api/tracks.
+         */
+
+        for (
+            const station
+            of mapData.stations || []
+        ) {
+
+            if (
+                station.latitude === null ||
+                station.longitude === null
+            ) {
+                continue;
+            }
+
+            /*
+             * Scegliamo la ricezione più recente disponibile.
+             */
+
+            let reception = null;
+
+            for (
+                const candidate
+                of station.receptions || []
+            ) {
+
+                if (
+                    !reception ||
+                    new Date(candidate.timestamp) >
+                    new Date(reception.timestamp)
+                ) {
+                    reception = candidate;
+                }
+            }
+
+            packets.push(
+                makeV2SyntheticPacket(
+
+                    station.callsign,
+
+                    station.last_seen,
+
+                    station.latitude,
+
+                    station.longitude,
+
+                    reception
+                        ? reception.receiver
+                        : station.last_receiver,
+
+                    reception
+                        ? reception.type
+                        : "DIRECT",
+
+                    reception
+                        ? reception.via
+                        : [],
+
+                    reception
+                        ? reception.radio_path
+                        : [
+                            station.callsign,
+                            station.last_receiver
+                        ].filter(Boolean),
+
+                    station.symbol_table,
+
+                    station.symbol_code,
+
+                    station.last_packet_id,
+
+                    station.info,
+
+                    station.speed_kmh
+                )
+            );
         }
+
+
+        /*
+         * La vecchia updateMap() continua a gestire:
+         *
+         * - simboli APRS
+         * - nominativi
+         * - marker
+         * - tracce verdi
+         * - punti verdi
+         * - popup storico
+         * - hover RF
+         * - memoria zoom
+         */
 
         updateMap(packets);
+
 
         status.textContent =
             "Online · " +
             new Date().toLocaleTimeString(
-                currentLanguage === "en" ? "en-GB" : "it-IT"
-            );
+                currentLanguage === "en"
+                    ? "en-GB"
+                    : "it-IT"
+            ) +
+            " · " +
+            (mapData.stats
+                ? mapData.stats.stations
+                : "?") +
+            " stazioni";
+
 
     }
 
     catch (error) {
 
-        console.error(error);
+        console.error(
+            "V2 load:",
+            error
+        );
 
         status.textContent =
-            t("Errore API", "API error");
+            t(
+                "Errore API V2",
+                "V2 API error"
+            );
 
         status.classList.add("error");
+
     }
 
     finally {
+
+        packetLoadInProgress = false;
+
         endDelayedUpdateOverlay();
     }
 }
@@ -1367,6 +1719,195 @@ function getTrackReceptionInfo(packet) {
 }
 
 
+
+
+function escapeHtml(value) {
+
+    return String(
+        value === null || value === undefined
+            ? ""
+            : value
+    )
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+function formatSpeedKmh(value) {
+
+    const speed =
+        Number(value);
+
+    if (!Number.isFinite(speed)) {
+        return "";
+    }
+
+    return speed.toFixed(1) + " km/h";
+}
+
+
+function buildStationHoverPopup(station) {
+
+    if (!station) {
+        return "";
+    }
+
+    const latestPacket =
+        Array.isArray(station.packets) &&
+        station.packets.length
+            ? station.packets[0]
+            : null;
+
+    const info =
+        String(
+            station.info ||
+            (
+                latestPacket
+                    ? latestPacket.info
+                    : ""
+            ) ||
+            ""
+        ).trim();
+
+    const speedValue =
+        station.speed_kmh !== undefined &&
+        station.speed_kmh !== null
+            ? station.speed_kmh
+            : (
+                latestPacket
+                    ? latestPacket.speed_kmh
+                    : null
+            );
+
+    const speed =
+        speedValue !== null &&
+        speedValue !== undefined
+            ? Number(speedValue)
+            : NaN;
+
+    return `
+        <div style="min-width:190px;max-width:320px;line-height:1.35">
+
+            <div style="font-weight:bold;font-size:13px;margin-bottom:5px">
+                ${escapeHtml(station.callsign || "")}
+            </div>
+
+            ${
+                info
+                    ? `
+                        <div style="margin-bottom:4px">
+                            <b>${t(
+                                "Informazioni:",
+                                "Information:"
+                            )}</b>
+                            ${escapeHtml(info)}
+                        </div>
+                    `
+                    : ""
+            }
+
+            ${
+                Number.isFinite(speed) && speed > 1
+                    ? `
+                        <div>
+                            <b>${t(
+                                "Velocità:",
+                                "Speed:"
+                            )}</b>
+                            ${formatSpeedKmh(speed)}
+                        </div>
+                    `
+                    : ""
+            }
+
+        </div>
+    `;
+}
+
+
+
+function calculateTrackSpeedKmh(previousItem, currentItem) {
+
+    if (
+        !previousItem ||
+        !currentItem ||
+        !previousItem.position ||
+        !currentItem.position ||
+        !previousItem.time ||
+        !currentItem.time
+    ) {
+        return null;
+    }
+
+    const dtSeconds =
+        (
+            currentItem.time.getTime() -
+            previousItem.time.getTime()
+        ) / 1000;
+
+    if (
+        !Number.isFinite(dtSeconds) ||
+        dtSeconds <= 0
+    ) {
+        return null;
+    }
+
+    const lat1 =
+        previousItem.position.lat *
+        Math.PI / 180;
+
+    const lat2 =
+        currentItem.position.lat *
+        Math.PI / 180;
+
+    const dLat =
+        (
+            currentItem.position.lat -
+            previousItem.position.lat
+        ) * Math.PI / 180;
+
+    const dLon =
+        (
+            currentItem.position.lon -
+            previousItem.position.lon
+        ) * Math.PI / 180;
+
+    const a =
+        Math.sin(dLat / 2) *
+        Math.sin(dLat / 2) +
+        Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+
+    const c =
+        2 *
+        Math.atan2(
+            Math.sqrt(a),
+            Math.sqrt(1 - a)
+        );
+
+    const distanceKm =
+        6371.0088 * c;
+
+    const speedKmh =
+        distanceKm /
+        (dtSeconds / 3600);
+
+    if (
+        !Number.isFinite(speedKmh) ||
+        speedKmh < 0
+    ) {
+        return null;
+    }
+
+    return speedKmh;
+}
+
+
 function updateTracks(stations) {
 
     clearTrackLayers();
@@ -1411,14 +1952,94 @@ function updateTracks(stations) {
                 return ta - tb;
             });
 
+            const uniquePositionedPackets = [];
+
+            positionedPackets.forEach(item => {
+
+                const previous =
+                    uniquePositionedPackets[
+                        uniquePositionedPackets.length - 1
+                    ];
+
+                if (
+                    previous &&
+                    previous.position.lat === item.position.lat &&
+                    previous.position.lon === item.position.lon
+                ) {
+                    return;
+                }
+
+                uniquePositionedPackets.push(item);
+            });
+
             if (
-                positionedPackets.length === 0
+                uniquePositionedPackets.length <= 1
             ) {
                 return;
             }
 
+            /*
+             * Velocita del punto:
+             *
+             * 1. preferiamo quella APRS realmente trasmessa;
+             * 2. se manca, la calcoliamo tra questo punto
+             *    e quello precedente.
+             */
+
+            uniquePositionedPackets.forEach(
+                (item, index) => {
+
+                    const aprsSpeed =
+                        Number(
+                            item.packet.speed_kmh
+                        );
+
+                    if (
+                        item.packet.speed_kmh !== null &&
+                        item.packet.speed_kmh !== undefined &&
+                        Number.isFinite(aprsSpeed)
+                    ) {
+
+                        item.displaySpeedKmh =
+                            aprsSpeed;
+
+                        item.speedSource =
+                            "APRS";
+
+                        return;
+                    }
+
+                    if (index <= 0) {
+
+                        item.displaySpeedKmh =
+                            null;
+
+                        item.speedSource =
+                            null;
+
+                        return;
+                    }
+
+                    const calculated =
+                        calculateTrackSpeedKmh(
+                            uniquePositionedPackets[
+                                index - 1
+                            ],
+                            item
+                        );
+
+                    item.displaySpeedKmh =
+                        calculated;
+
+                    item.speedSource =
+                        calculated !== null
+                            ? "CALCULATED"
+                            : null;
+                }
+            );
+
             const latLngs =
-                positionedPackets.map(item => [
+                uniquePositionedPackets.map(item => [
                     item.position.lat,
                     item.position.lon
                 ]);
@@ -1438,7 +2059,7 @@ function updateTracks(stations) {
 
             const points = [];
 
-            positionedPackets.forEach(item => {
+            uniquePositionedPackets.forEach(item => {
 
                 const point =
                     L.circleMarker(
@@ -1475,7 +2096,29 @@ function updateTracks(stations) {
                         ${
                             reception.via
                                 ? `<div><b>Via:</b> ${reception.via}</div>`
-                                : `<div><b>Diretta</b></div>`
+                                : `<div><b>${t("Diretta", "Direct")}</b></div>`
+                        }
+
+                        ${
+                            Number.isFinite(
+                                Number(
+                                    item.displaySpeedKmh
+                                )
+                            ) &&
+                            item.displaySpeedKmh !== null &&
+                            Number(item.displaySpeedKmh) > 1
+                                ? `
+                                    <div>
+                                        <b>${t(
+                                            "Velocità:",
+                                            "Speed:"
+                                        )}</b>
+                                        ${formatSpeedKmh(
+                                            item.displaySpeedKmh
+                                        )}
+                                    </div>
+                                `
+                                : ""
                         }
                     </div>
                 `;
@@ -1948,53 +2591,138 @@ function animateLivePacket(packet) {
 
 
 async function pollLivePackets() {
-    if (livePolling) return;
+
+    if (livePolling) {
+        return;
+    }
+
     livePolling = true;
 
     try {
-        const response = await fetch(
-            API + "/packets?limit=50&_live=" + Date.now(),
-            { cache: "no-store" }
-        );
 
-        if (!response.ok) return;
+        const afterId =
+            liveLastPacketId === null
+                ? 0
+                : liveLastPacketId;
 
-        const data = await response.json();
-        const packets = Array.isArray(data)
-            ? data
-            : (Array.isArray(data.packets) ? data.packets : []);
+        const response =
+            await fetch(
+                API +
+                "/live?after_id=" +
+                encodeURIComponent(afterId) +
+                "&_live=" +
+                Date.now(),
+                {
+                    cache: "no-store"
+                }
+            );
 
-        const validPackets = packets
-            .filter(packet => Number.isFinite(Number(packet.id)))
-            .sort((a, b) => Number(a.id) - Number(b.id));
-
-        if (!validPackets.length) return;
-
-        const newestId = Number(validPackets[validPackets.length - 1].id);
-
-        if (liveLastPacketId === null) {
-            liveLastPacketId = newestId;
+        if (!response.ok) {
             return;
         }
 
-        const fresh = validPackets.filter(
-            packet => Number(packet.id) > liveLastPacketId
-        );
+        const data =
+            await response.json();
 
-        liveLastPacketId = Math.max(liveLastPacketId, newestId);
+
+        /*
+         * Prima chiamata:
+         * sincronizza soltanto l'ultimo ID.
+         */
+
+        if (liveLastPacketId === null) {
+
+            liveLastPacketId =
+                Number(data.newest_id) || 0;
+
+            return;
+        }
+
+
+        const fresh =
+            Array.isArray(data.packets)
+                ? data.packets
+                : [];
+
+
+        liveLastPacketId =
+            Math.max(
+                liveLastPacketId,
+                Number(data.newest_id) || 0
+            );
+
 
         fresh
             .slice(-12)
-            .forEach((packet, index) => {
-                setTimeout(() => {
-                    animateLivePacket(packet);
-                }, index * 220);
-            });
+            .forEach(
+                (item, index) => {
+
+                    const packet =
+                        makeV2SyntheticPacket(
+
+                            item.callsign,
+
+                            item.timestamp,
+
+                            item.latitude,
+
+                            item.longitude,
+
+                            item.receiver,
+
+                            item.type,
+
+                            item.via,
+
+                            item.radio_path,
+
+                            item.symbol_table,
+
+                            item.symbol_code,
+
+                            item.id
+                        );
+
+
+                    setTimeout(
+                        () => {
+                            animateLivePacket(
+                                packet
+                            );
+                        },
+                        index * 220
+                    );
+                }
+            );
+
+
+        /*
+         * Dopo le animazioni aggiorniamo marker e tracce.
+         */
+
+        if (fresh.length) {
+
+            setTimeout(
+                () => {
+                    loadPackets();
+                },
+                2600
+            );
+        }
+
     }
+
     catch (error) {
-        console.warn("Live polling APRS:", error);
+
+        console.warn(
+            "Live polling V2:",
+            error
+        );
+
     }
+
     finally {
+
         livePolling = false;
     }
 }
@@ -2152,6 +2880,15 @@ function updateMap(packets) {
                     packet.last_known_symbol_code ||
                     null,
 
+                info:
+                    packet.info || null,
+
+                speed_kmh:
+                    packet.speed_kmh !== undefined &&
+                    packet.speed_kmh !== null
+                        ? Number(packet.speed_kmh)
+                        : null,
+
                 packets: []
             };
         }
@@ -2209,11 +2946,38 @@ function updateMap(packets) {
         }
 
 
+        /*
+         * Manteniamo nell'oggetto station
+         * l'ultima informazione valida disponibile.
+         */
+        if (
+            packet.info &&
+            !stations[normCall].info
+        ) {
+            stations[normCall].info =
+                String(packet.info).trim();
+        }
+
+        if (
+            packet.speed_kmh !== undefined &&
+            packet.speed_kmh !== null
+        ) {
+
+            const speed =
+                Number(packet.speed_kmh);
+
+            if (Number.isFinite(speed)) {
+                stations[normCall].speed_kmh =
+                    speed;
+            }
+        }
+
         stations[normCall].packets.push(packet);
 
     });
 
     Object.values(stations).forEach(station => {
+
         station.packets.sort((a, b) => {
             const ta = getPacketTime(a);
             const tb = getPacketTime(b);
@@ -2221,6 +2985,53 @@ function updateMap(packets) {
             const vb = tb ? tb.getTime() : 0;
             return vb - va;
         });
+
+        /*
+         * INFO STAZIONE V2
+         *
+         * Dopo avere ordinato i packet dal più recente al
+         * più vecchio, utilizziamo la prima informazione APRS
+         * valida disponibile.
+         *
+         * Questo evita che un punto /tracks inserito prima
+         * dell'ultima posizione /map lasci nella stazione
+         * un commento vecchio o incompleto.
+         */
+        for (const packet of station.packets) {
+
+            const info =
+                String(
+                    packet.info || ""
+                ).trim();
+
+            if (info) {
+                station.info = info;
+                break;
+            }
+        }
+
+        /*
+         * VELOCITA STAZIONE
+         *
+         * Stesso criterio: utilizziamo il dato del packet
+         * più recente che contiene una velocità valida.
+         */
+        for (const packet of station.packets) {
+
+            if (
+                packet.speed_kmh !== undefined &&
+                packet.speed_kmh !== null &&
+                Number.isFinite(
+                    Number(packet.speed_kmh)
+                )
+            ) {
+
+                station.speed_kmh =
+                    Number(packet.speed_kmh);
+
+                break;
+            }
+        }
     });
 
     const positionIndex = buildPositionIndex(packets, stations);
@@ -2259,27 +3070,112 @@ function updateMap(packets) {
 
         if (markers[key]) {
 
+            /*
+             * Il marker esiste già, ma station viene
+             * ricostruita ad ogni aggiornamento.
+             *
+             * Manteniamo quindi nel marker sempre i dati
+             * più recenti restituiti dalla API.
+             */
+            markers[key]._stationData =
+                station;
+
+            markers[key]._positionIndex =
+                positionIndex;
+
             markers[key].setLatLng(latLng);
             markers[key].setIcon(icon);
 
+            markers[key].setPopupContent(
+                buildStationHoverPopup(
+                    station
+                )
+            );
+
         } else {
 
-            const marker = L.marker(latLng, { icon: icon });
+            const marker =
+                L.marker(
+                    latLng,
+                    {
+                        icon: icon
+                    }
+                );
+
+            /*
+             * Dati correnti associati al marker.
+             * Verranno aggiornati ad ogni loadPackets().
+             */
+            marker._stationData =
+                station;
+
+            marker._positionIndex =
+                positionIndex;
+
+            marker.bindPopup(
+                buildStationHoverPopup(
+                    marker._stationData
+                ),
+                {
+                    closeButton: false,
+                    autoPan: false,
+                    offset: [0, -8]
+                }
+            );
 
             marker.on("click", () => {
-                window.location.href = "station.html?callsign=" + encodeURIComponent(station.callsign);
+
+                const currentStation =
+                    marker._stationData;
+
+                if (!currentStation) {
+                    return;
+                }
+
+                window.location.href =
+                    "station.html?callsign=" +
+                    encodeURIComponent(
+                        currentStation.callsign
+                    );
             });
 
             marker.on("mouseover", () => {
-                drawHoverConnections(station, positionIndex);
+
+                const currentStation =
+                    marker._stationData;
+
+                const currentPositionIndex =
+                    marker._positionIndex;
+
+                if (!currentStation) {
+                    return;
+                }
+
+                drawHoverConnections(
+                    currentStation,
+                    currentPositionIndex
+                );
+
+                marker.setPopupContent(
+                    buildStationHoverPopup(
+                        currentStation
+                    )
+                );
+
+                marker.openPopup();
             });
 
             marker.on("mouseout", () => {
+
                 clearHoverConnection();
+
+                marker.closePopup();
             });
 
             marker.addTo(map);
-            markers[key] = marker;
+
+            markers[key] =
+                marker;
         }
 
     });
@@ -2289,6 +3185,145 @@ function updateMap(packets) {
     if (firstLoad && bounds.length > 0) {
         map.fitBounds(bounds, { padding: [50, 50] });
         firstLoad = false;
+    }
+}
+
+
+
+/* ============================================================
+   RICEVITORI DINAMICI
+   ============================================================ */
+
+async function loadReceiverMenu() {
+
+    const menu =
+        document.getElementById(
+            "receiverMenuContent"
+        );
+
+    if (!menu) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                API + "/receivers",
+                {
+                    cache: "no-store"
+                }
+            );
+
+        if (!response.ok) {
+            throw new Error(
+                "HTTP " + response.status
+            );
+        }
+
+        const data =
+            await response.json();
+
+        const receivers =
+            Array.isArray(data)
+                ? data
+                : (
+                    Array.isArray(data.receivers)
+                        ? data.receivers
+                        : []
+                );
+
+        menu.innerHTML = "";
+
+        receivers.forEach(receiver => {
+
+            const callsign =
+                String(
+                    receiver.callsign ||
+                    receiver.receiver_callsign ||
+                    receiver.name ||
+                    ""
+                ).trim();
+
+            if (!callsign) {
+                return;
+            }
+
+            const link =
+                document.createElement("a");
+
+            link.href =
+                "coverage.html?receiver=" +
+                encodeURIComponent(
+                    callsign
+                );
+
+            link.textContent =
+                "📡 " + callsign;
+
+            menu.appendChild(link);
+        });
+
+
+        if (!menu.children.length) {
+
+            const empty =
+                document.createElement("span");
+
+            empty.style.display =
+                "block";
+
+            empty.style.padding =
+                "8px 10px";
+
+            empty.style.fontSize =
+                "11px";
+
+            empty.style.color =
+                "#999";
+
+            empty.textContent =
+                t(
+                    "Nessun ricevitore",
+                    "No receivers"
+                );
+
+            menu.appendChild(empty);
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Errore caricamento ricevitori:",
+            error
+        );
+
+        menu.innerHTML = "";
+
+        const empty =
+            document.createElement("span");
+
+        empty.style.display =
+            "block";
+
+        empty.style.padding =
+            "8px 10px";
+
+        empty.style.fontSize =
+            "11px";
+
+        empty.style.color =
+            "#ff7777";
+
+        empty.textContent =
+            t(
+                "Errore ricevitori",
+                "Receivers error"
+            );
+
+        menu.appendChild(empty);
     }
 }
 
@@ -2310,6 +3345,8 @@ document
         selectedPeriodHours = parseFloat(e.target.value) || 1;
         loadPackets();
     });
+
+loadReceiverMenu();
 
 loadPackets();
 setInterval(loadPackets, REFRESH_INTERVAL);

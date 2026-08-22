@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
-import json
 import logging
 import os
 import sqlite3
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -21,10 +19,8 @@ from config import (
     RECEIVERS,
 )
 
-os.makedirs(DATA_DIR, exist_ok=True)
 
-RECEIVER_MAP_FILE = os.path.join(DATA_DIR, "receiver-map.json")
-PENDING_PER_TOPIC = 500
+os.makedirs(DATA_DIR, exist_ok=True)
 
 logging.basicConfig(
     filename=LOG_FILE,
@@ -37,10 +33,39 @@ def normalize(value):
     return str(value or "").strip().upper()
 
 
-def configured_receivers():
-    result = {}
+def callsign_base(callsign):
+    """
+    Restituisce il nominativo senza SSID.
+
+    IQ3GO-12  -> IQ3GO
+    IV3SCP-10 -> IV3SCP
+    IV3XXX    -> IV3XXX
+
+    Il firmware pubblica i pacchetti come:
+
+        lora_aprs/<CALLSIGN_SENZA_SSID>/<STAZIONE>
+
+    RX1, RX2, RX3... rimangono invece identificatori
+    interni configurati in RECEIVERS.
+    """
+    return normalize(callsign).split("-", 1)[0]
+
+
+def build_receiver_maps():
+    """
+    Costruisce la corrispondenza:
+
+        RX1 -> IQ3GO-12 -> topic IQ3GO
+        RX2 -> IV3SCP-10 -> topic IV3SCP
+
+    Nel config l'utente modifica soltanto il callsign.
+    """
+
+    topic_map = {}
+    receiver_map = {}
 
     for rx_id, cfg in RECEIVERS.items():
+
         rx_id = normalize(rx_id)
         callsign = normalize(cfg.get("callsign"))
         enabled = bool(cfg.get("enabled", True))
@@ -48,63 +73,35 @@ def configured_receivers():
         if not rx_id or not callsign:
             continue
 
-        result[rx_id] = {
+        topic_name = callsign_base(callsign)
+
+        info = {
             "rx_id": rx_id,
             "callsign": callsign,
             "enabled": enabled,
+            "topic_name": topic_name,
         }
 
-    return result
+        receiver_map[rx_id] = info
+
+        if enabled:
+
+            if topic_name in topic_map:
+                raise RuntimeError(
+                    "Due ricevitori configurati generano lo stesso "
+                    "identificatore MQTT: " + topic_name
+                )
+
+            topic_map[topic_name] = info
+
+    return topic_map, receiver_map
 
 
-CONFIGURED_RECEIVERS = configured_receivers()
-
-CALLSIGN_TO_RX = {
-    info["callsign"]: rx_id
-    for rx_id, info in CONFIGURED_RECEIVERS.items()
-    if info["enabled"]
-}
-
-TOPIC_TO_RX = {}
-PENDING = defaultdict(lambda: deque(maxlen=PENDING_PER_TOPIC))
-
-
-def load_receiver_map():
-    if not os.path.exists(RECEIVER_MAP_FILE):
-        return
-
-    try:
-        with open(RECEIVER_MAP_FILE, "r", encoding="utf-8") as f:
-            saved = json.load(f)
-
-        if not isinstance(saved, dict):
-            return
-
-        for topic_name, rx_id in saved.items():
-            topic_name = normalize(topic_name)
-            rx_id = normalize(rx_id)
-
-            if (
-                topic_name
-                and rx_id in CONFIGURED_RECEIVERS
-                and CONFIGURED_RECEIVERS[rx_id]["enabled"]
-            ):
-                TOPIC_TO_RX[topic_name] = rx_id
-
-    except Exception:
-        logging.exception("Errore lettura %s", RECEIVER_MAP_FILE)
-
-
-def save_receiver_map():
-    tmp_file = RECEIVER_MAP_FILE + ".tmp"
-
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(TOPIC_TO_RX, f, indent=2, sort_keys=True)
-
-    os.replace(tmp_file, RECEIVER_MAP_FILE)
+TOPIC_RECEIVER_MAP, RECEIVER_MAP = build_receiver_maps()
 
 
 def init_database():
+
     conn = sqlite3.connect(DB_FILE)
 
     conn.execute("""
@@ -153,65 +150,56 @@ def init_database():
     conn.close()
 
 
-def parse_topic(topic):
+def resolve_receiver(topic):
+
     parts = str(topic).split("/")
 
+    # Formato atteso:
+    # lora_aprs/IQ3GO/S57PNX-8
     if len(parts) < 3:
-        return None, None
-
-    return normalize(parts[1]), normalize(parts[2])
-
-
-def packet_source(packet, fallback=""):
-    packet = str(packet or "").strip()
-
-    if ">" in packet:
-        return normalize(packet.split(">", 1)[0])
-
-    return normalize(fallback)
-
-
-def learn_receiver(topic_name, source_callsign):
-    rx_id = CALLSIGN_TO_RX.get(source_callsign)
-
-    if not rx_id:
         return None
 
-    existing = TOPIC_TO_RX.get(topic_name)
+    topic_name = normalize(parts[1])
 
-    if existing and existing != rx_id:
-        logging.error(
-            "Conflitto mappa MQTT: %s era %s, ora il beacon %s indica %s",
+    return TOPIC_RECEIVER_MAP.get(topic_name)
+
+
+def save_packet(topic, packet):
+
+    receiver_info = resolve_receiver(topic)
+
+    if receiver_info is None:
+
+        parts = str(topic).split("/")
+        topic_name = parts[1] if len(parts) >= 2 else "?"
+
+        logging.warning(
+            "Pacchetto ignorato: ricevitore MQTT '%s' "
+            "non associato ad alcun RX configurato",
             topic_name,
-            existing,
-            source_callsign,
-            rx_id,
-        )
-        return None
-
-    if not existing:
-        TOPIC_TO_RX[topic_name] = rx_id
-        save_receiver_map()
-
-        logging.info(
-            "Associazione automatica appresa: %s -> %s -> %s",
-            topic_name,
-            rx_id,
-            CONFIGURED_RECEIVERS[rx_id]["callsign"],
         )
 
-    return rx_id
-
-
-def insert_packet(rx_id, topic, packet):
-    info = CONFIGURED_RECEIVERS.get(rx_id)
-
-    if not info or not info["enabled"]:
         return False
 
-    _, topic_callsign = parse_topic(topic)
+    if not receiver_info["enabled"]:
+        return False
 
-    callsign = packet_source(packet, topic_callsign)
+    parts = str(topic).split("/")
+
+    # Nel database:
+    #
+    # receiver          = RX1 / RX2 / RX3 ...
+    # receiver_callsign = IQ3GO-12 / IV3SCP-10 / ...
+    #
+    receiver = receiver_info["rx_id"]
+    receiver_callsign = receiver_info["callsign"]
+
+    if ">" in packet:
+        callsign = packet.split(">", 1)[0].strip()
+    elif len(parts) >= 3:
+        callsign = parts[2].strip()
+    else:
+        return False
 
     if not callsign:
         return False
@@ -235,8 +223,8 @@ def insert_packet(rx_id, topic, packet):
         """,
         (
             timestamp,
-            rx_id,
-            info["callsign"],
+            receiver,
+            receiver_callsign,
             callsign,
             topic,
             packet,
@@ -249,92 +237,41 @@ def insert_packet(rx_id, topic, packet):
     return True
 
 
-def flush_pending(topic_name, rx_id):
-    queue = PENDING.get(topic_name)
-
-    if not queue:
-        return
-
-    count = 0
-
-    while queue:
-        topic, packet = queue.popleft()
-
-        if insert_packet(rx_id, topic, packet):
-            count += 1
-
-    if topic_name in PENDING:
-        del PENDING[topic_name]
-
-    logging.info(
-        "Recuperati %s pacchetti in attesa per %s -> %s",
-        count,
-        topic_name,
-        rx_id,
-    )
-
-
-def process_packet(topic, packet):
-    topic_name, topic_callsign = parse_topic(topic)
-
-    if not topic_name:
-        logging.warning("Topic MQTT non valido: %s", topic)
-        return False
-
-    source_callsign = packet_source(packet, topic_callsign)
-
-    rx_id = TOPIC_TO_RX.get(topic_name)
-
-    if rx_id:
-        return insert_packet(rx_id, topic, packet)
-
-    rx_id = learn_receiver(topic_name, source_callsign)
-
-    if rx_id:
-        flush_pending(topic_name, rx_id)
-        return insert_packet(rx_id, topic, packet)
-
-    PENDING[topic_name].append((topic, packet))
-
-    if len(PENDING[topic_name]) == 1:
-        logging.info(
-            "Ricevitore MQTT '%s' non ancora identificato: "
-            "attendo il beacon di uno dei callsign configurati",
-            topic_name,
-        )
-
-    return False
-
-
 def on_connect(client, userdata, flags, reason_code, properties):
+
     if reason_code == 0:
+
         logging.info("MQTT connesso")
 
         client.subscribe(MQTT_TOPIC)
 
-        logging.info("Sottoscritto a %s", MQTT_TOPIC)
+        logging.info(
+            "Sottoscritto a %s",
+            MQTT_TOPIC
+        )
 
-        for rx_id, info in CONFIGURED_RECEIVERS.items():
+        for rx_id, info in RECEIVER_MAP.items():
+
             logging.info(
-                "%s -> callsign=%s -> enabled=%s",
+                "%s -> callsign=%s -> topic=%s -> enabled=%s",
                 rx_id,
                 info["callsign"],
+                info["topic_name"],
                 info["enabled"],
             )
 
-        for topic_name, rx_id in TOPIC_TO_RX.items():
-            logging.info(
-                "Mappa MQTT già nota: %s -> %s",
-                topic_name,
-                rx_id,
-            )
-
     else:
-        logging.error("MQTT connessione fallita: %s", reason_code)
+
+        logging.error(
+            "MQTT connessione fallita: %s",
+            reason_code
+        )
 
 
 def on_message(client, userdata, msg):
+
     try:
+
         packet = msg.payload.decode(
             "utf-8",
             errors="replace"
@@ -343,22 +280,39 @@ def on_message(client, userdata, msg):
         if not packet:
             return
 
-        saved = process_packet(msg.topic, packet)
+        saved = save_packet(
+            msg.topic,
+            packet
+        )
 
         if saved:
-            logging.info("%s | %s", msg.topic, packet)
-            print(f"{msg.topic} | {packet}", flush=True)
+
+            logging.info(
+                "%s | %s",
+                msg.topic,
+                packet
+            )
+
+            print(
+                f"{msg.topic} | {packet}",
+                flush=True
+            )
 
     except Exception:
-        logging.exception("Errore nella gestione del pacchetto")
+
+        logging.exception(
+            "Errore nella gestione del pacchetto"
+        )
 
 
 def main():
-    init_database()
-    load_receiver_map()
 
-    if not CONFIGURED_RECEIVERS:
-        raise RuntimeError("Nessun ricevitore valido configurato")
+    init_database()
+
+    if not RECEIVER_MAP:
+        raise RuntimeError(
+            "Nessun ricevitore valido configurato"
+        )
 
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
@@ -366,6 +320,7 @@ def main():
     )
 
     if MQTT_USER:
+
         client.username_pw_set(
             MQTT_USER,
             MQTT_PASSWORD

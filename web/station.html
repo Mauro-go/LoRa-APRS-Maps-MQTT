@@ -458,6 +458,14 @@ const params = new URLSearchParams(window.location.search);
 
 const callsign = params.get("callsign");
 
+const stationHours =
+    Math.max(
+        1,
+        parseFloat(
+            params.get("hours") || "168"
+        ) || 168
+    );
+
 
 /* ============================================================
    UTILITY
@@ -1558,7 +1566,11 @@ async function loadStation() {
 
         const response =
             await fetch(
-                API + "/packets?limit=500",
+                API +
+                "/station?callsign=" +
+                encodeURIComponent(callsign) +
+                "&hours=" +
+                encodeURIComponent(stationHours),
                 {
                     cache: "no-store"
                 }
@@ -1577,108 +1589,19 @@ async function loadStation() {
             await response.json();
 
 
-        const packets =
-            Array.isArray(data)
-                ? data
-                : (
-                    Array.isArray(data.packets)
-                        ? data.packets
-                        : []
-                );
-
-
         /*
          * =====================================================
-         * FUNZIONI DATI
+         * DATI GIÀ AGGREGATI DAL BACKEND V2
          * =====================================================
          */
 
-        function getSource(packet) {
+        const summary =
+            data.summary || {};
 
-            return String(
-                packet.callsign ||
-                packet.source ||
-                packet.src ||
-                packet.station ||
-                ""
-            ).trim();
-        }
-
-
-        function getReceiver(packet) {
-
-            return String(
-                packet.receiver_callsign ||
-                ""
-            ).trim();
-        }
-
-
-        function getTime(packet) {
-
-            return (
-                packet.received_at ||
-                packet.timestamp ||
-                packet.time ||
-                ""
-            );
-        }
-
-
-        /*
-         * =====================================================
-         * PACKET DELLA STAZIONE
-         * =====================================================
-         */
-
-        const transmittedPackets =
-            packets.filter(
-                packet =>
-                    getSource(packet).toUpperCase() ===
-                    callsign.toUpperCase()
-            );
-
-
-        const receivedPackets =
-            packets.filter(
-                packet =>
-                    getReceiver(packet).toUpperCase() ===
-                    callsign.toUpperCase()
-            );
-
-
-        /*
-         * =====================================================
-         * PACCHETTI TRANSITATI VIA STAZIONE
-         * =====================================================
-         */
-
-        const transitPackets = [];
-
-        packets.forEach(packet => {
-
-            const transit =
-                getTransitInfo(packet, callsign);
-
-            if (transit) {
-                transitPackets.push({
-                    packet,
-                    transit
-                });
-            }
-        });
-
-
-        const transitStations =
-            new Set(
-                transitPackets
-                    .map(x =>
-                        String(x.transit.source || "")
-                            .trim()
-                            .toUpperCase()
-                    )
-                    .filter(Boolean)
-            );
+        const stationPackets =
+            Array.isArray(data.source_packets)
+                ? data.source_packets
+                : [];
 
 
         /*
@@ -1687,60 +1610,41 @@ async function loadStation() {
          * =====================================================
          */
 
-        const stationPackets =
-            [...transmittedPackets]
-                .sort(
-                    (a, b) =>
-                        new Date(
-                            getTime(b)
-                        ).getTime()
-                        -
-                        new Date(
-                            getTime(a)
-                        ).getTime()
-                );
-
-
         let stationPosition = null;
 
-
-        for (
-            const packet of stationPackets
+        if (
+            data.position &&
+            Number.isFinite(
+                Number(data.position.latitude)
+            ) &&
+            Number.isFinite(
+                Number(data.position.longitude)
+            )
         ) {
 
-            const position =
-                getPacketPosition(packet);
+            stationPosition = {
+                latitude:
+                    Number(
+                        data.position.latitude
+                    ),
 
-            if (position) {
-
-                stationPosition =
-                    position;
-
-                break;
-            }
+                longitude:
+                    Number(
+                        data.position.longitude
+                    )
+            };
         }
 
 
         /*
          * =====================================================
          * METEO
-         *
-         * IMPORTANTISSIMO:
-         *
-         * Cerchiamo SOLO nei packet trasmessi
-         * dalla stazione selezionata.
-         *
-         * In questo modo non mostriamo il meteo
-         * di un'altra stazione.
          * =====================================================
          */
 
         let latestWeather = null;
 
-
-        for (
-            const packet of stationPackets
-        ) {
+        for (const packet of stationPackets) {
 
             const weather =
                 parseWeather(packet);
@@ -1761,256 +1665,62 @@ async function loadStation() {
          * =====================================================
          */
 
-        let latestStationComment = null;
-
-        for (
-            const packet of stationPackets
-        ) {
-
-            const comment =
-                extractAprsComment(packet);
-
-            if (comment) {
-
-                latestStationComment =
-                    comment;
-
-                break;
-            }
-        }
+        const latestStationComment =
+            data.info
+                ? String(data.info).trim()
+                : null;
 
 
         /*
          * =====================================================
-         * RAGGRUPPAMENTO
+         * GRUPPI GIÀ CALCOLATI DAL BACKEND
          * =====================================================
          */
-
-        function groupPackets(
-            list,
-            nameFunction
-        ) {
-
-            const groups = {};
-
-
-            list.forEach(
-                packet => {
-
-                    const name =
-                        nameFunction(packet);
-
-                    if (!name) {
-                        return;
-                    }
-
-
-                    const info =
-                        analyzePath(packet);
-
-
-                    if (info.internet) {
-                        return;
-                    }
-
-
-                    const category =
-                        info.direct
-                            ? "direct"
-                            : "via";
-
-
-                    const key =
-                        category === "via"
-                            ? name + "|" + (
-                                info.via ||
-                                "UNKNOWN"
-                            )
-                            : name + "|DIRECT";
-
-
-                    if (!groups[key]) {
-
-                        groups[key] = {
-
-                            name,
-                            category,
-                            via: info.via,
-                            count: 0,
-                            last: null
-                        };
-                    }
-
-
-                    groups[key].count++;
-
-
-                    const time =
-                        getTime(packet);
-
-
-                    if (time) {
-
-                        const date =
-                            new Date(time);
-
-                        if (
-                            !isNaN(
-                                date.getTime()
-                            )
-                        ) {
-
-                            if (
-                                !groups[key].last ||
-                                date >
-                                groups[key].last
-                            ) {
-
-                                groups[key].last =
-                                    date;
-                            }
-                        }
-                    }
-                }
-            );
-
-
-            return Object.values(groups).sort(
-                (a, b) => {
-
-                    const ad =
-                        a.last
-                            ? a.last.getTime()
-                            : 0;
-
-                    const bd =
-                        b.last
-                            ? b.last.getTime()
-                            : 0;
-
-                    return bd - ad;
-                }
-            );
-        }
-
-
-        const transmittedGroups =
-            groupPackets(
-                transmittedPackets,
-                packet => getReceiver(packet)
-            );
-
 
         const transmittedDirect =
-            transmittedGroups.filter(
-                x => x.category === "direct"
-            );
-
+            Array.isArray(data.transmitted_direct)
+                ? data.transmitted_direct
+                : [];
 
         const transmittedVia =
-            transmittedGroups.filter(
-                x => x.category === "via"
-            );
-
-
-        const receivedGroups =
-            groupPackets(
-                receivedPackets,
-                packet => getSource(packet)
-            );
-
+            Array.isArray(data.transmitted_via)
+                ? data.transmitted_via
+                : [];
 
         const receivedDirect =
-            receivedGroups.filter(
-                x => x.category === "direct"
-            );
-
+            Array.isArray(data.received_direct)
+                ? data.received_direct
+                : [];
 
         const receivedVia =
-            receivedGroups.filter(
-                x => x.category === "via"
-            );
-
-
-        const transitGroupsMap = {};
-
-        transitPackets.forEach(entry => {
-
-            const source =
-                String(entry.transit.source || "-").trim();
-
-            const receiver =
-                String(entry.transit.receiver || "-").trim();
-
-            const key =
-                source.toUpperCase() + "|" +
-                receiver.toUpperCase();
-
-            if (!transitGroupsMap[key]) {
-
-                transitGroupsMap[key] = {
-                    source,
-                    receiver,
-                    count: 0,
-                    last: null
-                };
-            }
-
-            transitGroupsMap[key].count++;
-
-            const time = getTime(entry.packet);
-
-            if (time) {
-
-                const date = new Date(time);
-
-                if (!isNaN(date.getTime())) {
-
-                    if (
-                        !transitGroupsMap[key].last ||
-                        date > transitGroupsMap[key].last
-                    ) {
-                        transitGroupsMap[key].last = date;
-                    }
-                }
-            }
-        });
-
+            Array.isArray(data.received_via)
+                ? data.received_via
+                : [];
 
         const transitGroups =
-            Object.values(transitGroupsMap)
-                .sort((a, b) => {
-                    const ad = a.last ? a.last.getTime() : 0;
-                    const bd = b.last ? b.last.getTime() : 0;
-                    return bd - ad;
-                });
+            Array.isArray(data.transit_groups)
+                ? data.transit_groups
+                : [];
 
 
         /*
          * =====================================================
-         * ULTIMO PACKET / SIMBOLO
+         * SIMBOLO
          * =====================================================
          */
-
-        const latest =
-            transmittedPackets[0] ||
-            receivedPackets[0] ||
-            null;
-
 
         let symbolHtml = "";
 
-
         if (
-            latest &&
-            latest.symbol_table &&
-            latest.symbol_code
+            data.symbol &&
+            data.symbol.symbol_table &&
+            data.symbol.symbol_code
         ) {
 
             symbolHtml =
                 getStationSymbolHtml(
-                    latest.symbol_table,
-                    latest.symbol_code
+                    data.symbol.symbol_table,
+                    data.symbol.symbol_code
                 );
         }
 
@@ -2021,45 +1731,20 @@ async function loadStation() {
          * =====================================================
          */
 
-        const dates =
-            packets
-                .filter(
-                    packet =>
-                        getSource(packet).toUpperCase() ===
-                        callsign.toUpperCase()
-                        ||
-                        getReceiver(packet).toUpperCase() ===
-                        callsign.toUpperCase()
-                        ||
-                        !!getTransitInfo(packet, callsign)
-                )
-                .map(
-                    packet => getTime(packet)
-                )
-                .filter(Boolean)
-                .map(
-                    value => new Date(value)
-                )
-                .filter(
-                    date =>
-                        !isNaN(
-                            date.getTime()
-                        )
-                )
-                .sort(
-                    (a, b) => a - b
-                );
-
-
         const firstDate =
-            dates.length
-                ? dates[0]
+            data.activity &&
+            data.activity.first
+                ? new Date(
+                    data.activity.first
+                )
                 : null;
 
-
         const lastDate =
-            dates.length
-                ? dates[dates.length - 1]
+            data.activity &&
+            data.activity.last
+                ? new Date(
+                    data.activity.last
+                )
                 : null;
 
 
@@ -2285,12 +1970,12 @@ async function loadStation() {
 
                 ${summaryCard(
                     t("Pacchetti trasmessi", "Transmitted packets"),
-                    transmittedPackets.length
+                    summary.transmitted_packets || 0
                 )}
 
                 ${summaryCard(
                     t("Pacchetti ricevuti", "Received packets"),
-                    receivedPackets.length
+                    summary.received_packets || 0
                 )}
 
                 ${summaryCard(
@@ -2307,13 +1992,13 @@ async function loadStation() {
 
                 ${summaryCard(
                     t("Pacchetti transitati via ", "Packets relayed via ") + callsign,
-                    transitPackets.length,
+                    summary.transit_packets || 0,
                     "transit"
                 )}
 
                 ${summaryCard(
                     t("Stazioni transitate via ", "Stations relayed via ") + callsign,
-                    transitStations.size,
+                    summary.transit_stations || 0,
                     "transit"
                 )}
 

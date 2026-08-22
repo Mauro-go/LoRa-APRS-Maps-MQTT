@@ -62,8 +62,24 @@ body {
 }
 
 .status {
+    display: inline-block;
+    flex: 0 0 205px;
+    width: 205px;
+
+    margin-left: 8px;
+
     font-size: 11px;
     color: #8fd18f;
+    text-align: left;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.topbar-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
 }
 
 .status.error {
@@ -261,49 +277,9 @@ html[data-lang="en"] .lang-en { display: inline; }
     font-size: 11px; cursor: pointer;
 }
 
-
-/* ======================================================
-   OVERLAY AGGIORNAMENTO RITARDATO
-   Compare solo se il caricamento dura oltre 2,5 secondi.
-   ====================================================== */
-
-.update-overlay {
-    position: fixed;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,.18);
-    z-index: 10000;
-    pointer-events: none;
-}
-
-.update-overlay.visible { display: flex; }
-
-.update-box {
-    min-width: 170px;
-    padding: 18px 24px;
-    border-radius: 10px;
-    background: rgba(25,25,25,.94);
-    color: white;
-    text-align: center;
-    box-shadow: 0 5px 24px rgba(0,0,0,.45);
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.update-spinner {
-    width: 26px;
-    height: 26px;
-    margin: 0 auto 10px auto;
-    border: 3px solid rgba(255,255,255,.25);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: update-spin .8s linear infinite;
-}
-
-@keyframes update-spin {
-    to { transform: rotate(360deg); }
+/* Zoom Leaflet sotto la barra superiore */
+.leaflet-top.leaflet-left {
+    top: 62px;
 }
 
 </style>
@@ -325,7 +301,7 @@ html[data-lang="en"] .lang-en { display: inline; }
 
     </div>
 
-    <div>
+    <div class="topbar-controls">
 
 
         <a
@@ -411,16 +387,6 @@ html[data-lang="en"] .lang-en { display: inline; }
 
 <div id="map"></div>
 
-
-<div id="updateOverlay" class="update-overlay" aria-hidden="true">
-    <div class="update-box">
-        <div class="update-spinner"></div>
-        <span class="lang-it">Aggiornamento...</span>
-        <span class="lang-en">Updating...</span>
-    </div>
-</div>
-
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
@@ -431,34 +397,6 @@ html[data-lang="en"] .lang-en { display: inline; }
 
 const API = "/lora-api";
 const REFRESH_INTERVAL = 10000;
-
-
-const UPDATE_OVERLAY_DELAY = 2500;
-let updateOverlayTimer = null;
-
-function beginDelayedUpdateOverlay() {
-    clearTimeout(updateOverlayTimer);
-
-    updateOverlayTimer = setTimeout(() => {
-        const overlay = document.getElementById("updateOverlay");
-        if (overlay) {
-            overlay.classList.add("visible");
-            overlay.setAttribute("aria-hidden", "false");
-        }
-    }, UPDATE_OVERLAY_DELAY);
-}
-
-function endDelayedUpdateOverlay() {
-    clearTimeout(updateOverlayTimer);
-    updateOverlayTimer = null;
-
-    const overlay = document.getElementById("updateOverlay");
-    if (overlay) {
-        overlay.classList.remove("visible");
-        overlay.setAttribute("aria-hidden", "true");
-    }
-}
-
 const SYMBOL_PATH = "/aprs-symbols/";
 
 let currentLanguage =
@@ -972,8 +910,6 @@ async function loadPackets() {
     const status =
         document.getElementById("status");
 
-    beginDelayedUpdateOverlay();
-
     try {
 
         status.textContent =
@@ -983,7 +919,11 @@ async function loadPackets() {
 
         const response =
             await fetch(
-                API + "/packets?limit=500",
+                API +
+                "/coverage?receiver=" +
+                encodeURIComponent(RECEIVER) +
+                "&hours=" +
+                encodeURIComponent(selectedPeriodHours),
                 {
                     cache: "no-store"
                 }
@@ -1019,9 +959,29 @@ async function loadPackets() {
 
         updateMap(packets);
 
+        const stationCount =
+            Number.isFinite(Number(data.stations))
+                ? Number(data.stations)
+                : packets.length;
+
         status.textContent =
             t("Online", "Online") + " · " +
-            new Date().toLocaleTimeString(currentLanguage === "en" ? "en-GB" : "it-IT");
+            new Date().toLocaleTimeString(
+                currentLanguage === "en"
+                    ? "en-GB"
+                    : "it-IT"
+            ) +
+            " · " +
+            stationCount +
+            " " +
+            t(
+                stationCount === 1
+                    ? "stazione"
+                    : "stazioni",
+                stationCount === 1
+                    ? "station"
+                    : "stations"
+            );
 
     }
 
@@ -1033,10 +993,6 @@ async function loadPackets() {
             t("Errore API", "API error");
 
         status.classList.add("error");
-    }
-
-    finally {
-        endDelayedUpdateOverlay();
     }
 }
 
@@ -1695,6 +1651,97 @@ function getTime(packet) {
 
 
 
+
+function escapeCoverageHtml(value) {
+
+    return String(
+        value === null || value === undefined
+            ? ""
+            : value
+    )
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+function formatCoverageSpeedKmh(value) {
+
+    const speed =
+        Number(value);
+
+    if (!Number.isFinite(speed)) {
+        return "";
+    }
+
+    return speed.toFixed(1) + " km/h";
+}
+
+
+function buildCoverageStationPopup(station) {
+
+    if (!station) {
+        return "";
+    }
+
+    const info =
+        String(
+            station.info || ""
+        ).trim();
+
+    const speed =
+        station.speed_kmh !== null &&
+        station.speed_kmh !== undefined
+            ? Number(station.speed_kmh)
+            : NaN;
+
+    return `
+        <div style="min-width:190px;max-width:320px;line-height:1.35">
+
+            <div style="font-weight:bold;font-size:13px;margin-bottom:5px">
+                ${escapeCoverageHtml(
+                    station.callsign || ""
+                )}
+            </div>
+
+            ${
+                info
+                    ? `
+                        <div style="margin-bottom:4px">
+                            <b>${t(
+                                "Informazioni:",
+                                "Information:"
+                            )}</b>
+                            ${escapeCoverageHtml(info)}
+                        </div>
+                    `
+                    : ""
+            }
+
+            ${
+                Number.isFinite(speed) &&
+                speed > 1
+                    ? `
+                        <div>
+                            <b>${t(
+                                "Velocità:",
+                                "Speed:"
+                            )}</b>
+                            ${formatCoverageSpeedKmh(
+                                speed
+                            )}
+                        </div>
+                    `
+                    : ""
+            }
+
+        </div>
+    `;
+}
+
+
 function updateMap(packets) {
 
     const cutoff =
@@ -1803,7 +1850,16 @@ function updateMap(packets) {
                 symbol_code:
                     packet.symbol_code ||
                     packet.symbolCode ||
-                    ">"
+                    ">",
+
+                info:
+                    packet.info || null,
+
+                speed_kmh:
+                    packet.speed_kmh !== undefined &&
+                    packet.speed_kmh !== null
+                        ? Number(packet.speed_kmh)
+                        : null
 
             };
         }
@@ -1896,12 +1952,21 @@ function updateMap(packets) {
 
         if (markers[key]) {
 
+            markers[key]._coverageStation =
+                station;
+
             markers[key].setLatLng(
                 latLng
             );
 
             markers[key].setIcon(
                 icon
+            );
+
+            markers[key].setPopupContent(
+                buildCoverageStationPopup(
+                    station
+                )
             );
 
         } else {
@@ -1914,14 +1979,60 @@ function updateMap(packets) {
                     }
                 );
 
+            marker._coverageStation =
+                station;
+
+            marker.bindPopup(
+                buildCoverageStationPopup(
+                    station
+                ),
+                {
+                    closeButton: false,
+                    autoPan: false,
+                    offset: [0, -8]
+                }
+            );
+
+            marker.on(
+                "mouseover",
+                () => {
+
+                    const current =
+                        marker._coverageStation;
+
+                    marker.setPopupContent(
+                        buildCoverageStationPopup(
+                            current
+                        )
+                    );
+
+                    marker.openPopup();
+                }
+            );
+
+            marker.on(
+                "mouseout",
+                () => {
+
+                    marker.closePopup();
+                }
+            );
+
             marker.on(
                 "click",
                 () => {
 
+                    const current =
+                        marker._coverageStation;
+
+                    if (!current) {
+                        return;
+                    }
+
                     window.location.href =
                         "station.html?callsign=" +
                         encodeURIComponent(
-                            station.callsign
+                            current.callsign
                         );
                 }
             );
@@ -2018,23 +2129,45 @@ function updateMap(packets) {
         lon: RECEIVER_LON,
 
         symbol_table:
-            receiverPacket &&
             (
-                receiverPacket.symbol_table ||
-                receiverPacket.symbolTable
+                receiverPacket &&
+                (
+                    receiverPacket.symbol_table ||
+                    receiverPacket.symbolTable
+                )
             )
-            || "/",
+            ||
+            window.COVERAGE_RECEIVER_SYMBOL_TABLE
+            ||
+            "/",
 
         symbol_code:
-            receiverPacket &&
             (
-                receiverPacket.symbol_code ||
-                receiverPacket.symbolCode
+                receiverPacket &&
+                (
+                    receiverPacket.symbol_code ||
+                    receiverPacket.symbolCode
+                )
             )
-            || ">",
+            ||
+            window.COVERAGE_RECEIVER_SYMBOL_CODE
+            ||
+            ">",
 
         packet:
-            receiverPacket || null
+            receiverPacket || null,
+
+        info:
+            window.COVERAGE_RECEIVER_INFO ||
+            null,
+
+        speed_kmh:
+            window.COVERAGE_RECEIVER_SPEED_KMH !== undefined &&
+            window.COVERAGE_RECEIVER_SPEED_KMH !== null
+                ? Number(
+                    window.COVERAGE_RECEIVER_SPEED_KMH
+                )
+                : null
     };
 
     const receiverIcon =
@@ -2047,6 +2180,10 @@ function updateMap(packets) {
     if (markers["RECEIVER"]) {
 
         markers["RECEIVER"]
+            ._coverageStation =
+                receiverStation;
+
+        markers["RECEIVER"]
             .setLatLng(
                 [
                     RECEIVER_LAT,
@@ -2056,6 +2193,13 @@ function updateMap(packets) {
 
         markers["RECEIVER"]
             .setIcon(receiverIcon);
+
+        markers["RECEIVER"]
+            .setPopupContent(
+                buildCoverageStationPopup(
+                    receiverStation
+                )
+            );
 
     }
     else {
@@ -2072,14 +2216,60 @@ function updateMap(packets) {
                 }
             );
 
+        receiverMarker._coverageStation =
+            receiverStation;
+
+        receiverMarker.bindPopup(
+            buildCoverageStationPopup(
+                receiverStation
+            ),
+            {
+                closeButton: false,
+                autoPan: false,
+                offset: [0, -8]
+            }
+        );
+
+        receiverMarker.on(
+            "mouseover",
+            () => {
+
+                const current =
+                    receiverMarker._coverageStation;
+
+                receiverMarker.setPopupContent(
+                    buildCoverageStationPopup(
+                        current
+                    )
+                );
+
+                receiverMarker.openPopup();
+            }
+        );
+
+        receiverMarker.on(
+            "mouseout",
+            () => {
+
+                receiverMarker.closePopup();
+            }
+        );
+
         receiverMarker.on(
             "click",
             () => {
 
+                const current =
+                    receiverMarker._coverageStation;
+
+                if (!current) {
+                    return;
+                }
+
                 window.location.href =
                     "station.html?callsign=" +
                     encodeURIComponent(
-                        RECEIVER
+                        current.callsign
                     );
             }
         );
@@ -2141,7 +2331,7 @@ async function initializeReceiver() {
 
     const response =
         await fetch(
-            API + "/status",
+            API + "/receivers",
             {
                 cache: "no-store"
             }
@@ -2225,6 +2415,86 @@ async function initializeReceiver() {
     RECEIVER_LON =
         Number(selected.longitude);
 
+    /*
+     * Simbolo APRS reale del ricevitore,
+     * fornito dinamicamente da /api/receivers.
+     */
+    window.COVERAGE_RECEIVER_SYMBOL_TABLE =
+        selected.symbol_table || null;
+
+    window.COVERAGE_RECEIVER_SYMBOL_CODE =
+        selected.symbol_code || null;
+
+    /*
+     * Informazioni del ricevitore.
+     *
+     * Le recuperiamo una sola volta dalla API Station,
+     * usando la stessa logica backend già usata dalle
+     * pagine Home/Station.
+     */
+    window.COVERAGE_RECEIVER_INFO =
+        null;
+
+    window.COVERAGE_RECEIVER_SPEED_KMH =
+        null;
+
+    try {
+
+        const stationResponse =
+            await fetch(
+                API +
+                "/station?callsign=" +
+                encodeURIComponent(RECEIVER) +
+                "&hours=168",
+                {
+                    cache: "no-store"
+                }
+            );
+
+        if (stationResponse.ok) {
+
+            const stationData =
+                await stationResponse.json();
+
+            window.COVERAGE_RECEIVER_INFO =
+                stationData.info || null;
+
+            /*
+             * /station normalmente non restituisce speed_kmh
+             * come dato principale. Lo lasciamo predisposto
+             * per eventuali versioni future.
+             */
+            if (
+                stationData.speed_kmh !== undefined &&
+                stationData.speed_kmh !== null
+            ) {
+
+                const receiverSpeed =
+                    Number(
+                        stationData.speed_kmh
+                    );
+
+                if (
+                    Number.isFinite(
+                        receiverSpeed
+                    )
+                ) {
+                    window.COVERAGE_RECEIVER_SPEED_KMH =
+                        receiverSpeed;
+                }
+            }
+        }
+
+    }
+
+    catch (error) {
+
+        console.warn(
+            "Informazioni ricevitore non disponibili:",
+            error
+        );
+    }
+
     document.title =
         t("Copertura ", "Coverage ") +
         RECEIVER +
@@ -2272,6 +2542,10 @@ async function startCoveragePage() {
 
         await loadPackets();
 
+        setInterval(
+            loadPackets,
+            REFRESH_INTERVAL
+        );
 
     }
     catch (error) {
@@ -2297,6 +2571,7 @@ document
     .getElementById("languageSelect")
     .addEventListener("change", function (e) {
         applyLanguage(e.target.value);
+        loadPackets();
     });
 
 document
