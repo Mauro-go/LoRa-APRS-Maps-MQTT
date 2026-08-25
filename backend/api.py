@@ -811,6 +811,9 @@ def build_map(hours):
             "timestamp":
                 row["timestamp"],
 
+            "rssi":
+                row["rssi"],
+
             "packet_id":
                 row["id"],
         }
@@ -1036,6 +1039,9 @@ def build_map(hours):
 
             "last_receiver":
                 row["receiver_callsign"],
+
+            "rssi":
+                row["rssi"],
 
             "info":
                 station_info,
@@ -2045,6 +2051,7 @@ class Handler(BaseHTTPRequestHandler):
                     receiver_callsign,
                     callsign,
                     topic,
+                    rssi,
                     packet
                 FROM packets
                 WHERE receiver_callsign = ?
@@ -2316,6 +2323,9 @@ class Handler(BaseHTTPRequestHandler):
                     "topic":
                         row["topic"],
 
+                    "rssi":
+                        row["rssi"],
+
                     "packet":
                         raw_packet,
 
@@ -2499,6 +2509,7 @@ class Handler(BaseHTTPRequestHandler):
                     receiver_callsign,
                     callsign,
                     topic,
+                    rssi,
                     packet
                 FROM packets
                 WHERE timestamp >= ?
@@ -2573,6 +2584,7 @@ class Handler(BaseHTTPRequestHandler):
                 category,
                 via,
                 timestamp,
+                rssi=None,
             ):
 
                 if key not in groups:
@@ -2592,6 +2604,12 @@ class Handler(BaseHTTPRequestHandler):
 
                         "last":
                             None,
+
+                        "last_rssi":
+                            None,
+
+                        "best_rssi":
+                            None,
                     }
 
                 item = groups[key]
@@ -2606,6 +2624,20 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 ):
                     item["last"] = timestamp
+                    item["last_rssi"] = rssi
+
+                if rssi is not None:
+                    try:
+                        rssi_value = int(rssi)
+
+                        if (
+                            item["best_rssi"] is None
+                            or rssi_value > item["best_rssi"]
+                        ):
+                            item["best_rssi"] = rssi_value
+
+                    except (TypeError, ValueError):
+                        pass
 
 
             # ====================================================
@@ -2657,6 +2689,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
 
                 timestamp = row["timestamp"]
+
+                rssi = row["rssi"]
 
 
                 # ------------------------------------------------
@@ -2718,6 +2752,9 @@ class Handler(BaseHTTPRequestHandler):
 
                             "packet":
                                 raw_packet,
+
+                            "rssi":
+                                rssi,
 
                             "latitude":
                                 aprs_source.get(
@@ -2841,6 +2878,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "via",
                                 via_text or "UNKNOWN",
                                 timestamp,
+                                rssi,
                             )
 
                         else:
@@ -2857,6 +2895,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "direct",
                                 None,
                                 timestamp,
+                                rssi,
                             )
 
 
@@ -2893,6 +2932,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "via",
                                 via_text or "UNKNOWN",
                                 timestamp,
+                                rssi,
                             )
 
                         else:
@@ -2909,6 +2949,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "direct",
                                 None,
                                 timestamp,
+                                rssi,
                             )
 
 

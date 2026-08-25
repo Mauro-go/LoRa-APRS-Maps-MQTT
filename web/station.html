@@ -1804,8 +1804,8 @@ async function loadStation() {
 
                         ${
                             group.count === 1
-                                ? "volta"
-                                : "volte"
+                                ? t("volta", "time")
+                                : t("volte", "times")
                         }
 
                         &nbsp;·&nbsp;
@@ -1817,6 +1817,32 @@ async function loadStation() {
                                 group.last
                             )}
                         </strong>
+
+                        ${
+                            group.last_rssi !== null &&
+                            group.last_rssi !== undefined
+                                ? `
+                                    <br>
+                                    ${t("Ultimo RSSI:", "Last RSSI:")}
+                                    <strong>
+                                        ${group.last_rssi} dBm
+                                    </strong>
+                                `
+                                : ""
+                        }
+
+                        ${
+                            group.best_rssi !== null &&
+                            group.best_rssi !== undefined
+                                ? `
+                                    &nbsp;·&nbsp;
+                                    ${t("Migliore:", "Best:")}
+                                    <strong>
+                                        ${group.best_rssi} dBm
+                                    </strong>
+                                `
+                                : ""
+                        }
 
                     </div>
 
