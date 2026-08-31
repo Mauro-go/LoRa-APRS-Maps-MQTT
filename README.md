@@ -14,8 +14,12 @@ The project was created in the spirit of amateur radio experimentation and shari
 >
 > Stable version released in August 2026.  
 > Future updates and major changes will be listed in the Version history below.
+---
+> ### Android app updates — August 2026
 
-
+- Fixed live packet playback after app resume / phone standby
+- Added APRS weather data to station details
+- Updated Android APK
 ---
 
 ## Version history
