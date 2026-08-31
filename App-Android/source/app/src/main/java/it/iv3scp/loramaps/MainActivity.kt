@@ -39,6 +39,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import it.iv3scp.loramaps.api.LivePackets
 import it.iv3scp.loramaps.api.LoraApi
+import it.iv3scp.loramaps.api.WeatherApi
+import it.iv3scp.loramaps.api.AprsWeather
 import it.iv3scp.loramaps.api.TrackPoint
 import it.iv3scp.loramaps.api.TracksApi
 import it.iv3scp.loramaps.map.TrackOverlays
@@ -226,6 +228,77 @@ fun LoraAprsScreen() {
     var selectedStation by remember {
         mutableStateOf<AprsStation?>(null)
     }
+
+    var selectedWeather by remember {
+        mutableStateOf<AprsWeather?>(null)
+    }
+
+    var weatherLoading by remember {
+        mutableStateOf(false)
+    }
+
+
+    /*
+     * ========================================================
+     * METEO STAZIONE SELEZIONATA
+     * ========================================================
+     *
+     * Il meteo viene caricato solamente quando viene
+     * selezionata una stazione.
+     *
+     * Non appesantiamo quindi il caricamento della mappa.
+     */
+
+    LaunchedEffect(
+        selectedStation?.callsign,
+        selectedHours,
+        configuredServerUrl
+    ) {
+
+        val station =
+            selectedStation
+
+        selectedWeather =
+            null
+
+        weatherLoading =
+            false
+
+        if (
+            station != null &&
+            configuredServerUrl.isNotBlank()
+        ) {
+
+            weatherLoading =
+                true
+
+            selectedWeather =
+                try {
+
+                    withContext(
+                        Dispatchers.IO
+                    ) {
+
+                        WeatherApi.loadWeather(
+                            callsign =
+                                station.callsign,
+
+                            hours =
+                                selectedHours
+                        )
+                    }
+
+                } catch (e: Exception) {
+
+                    e.printStackTrace()
+                    null
+                }
+
+            weatherLoading =
+                false
+        }
+    }
+
 
     var mapRef by remember {
         mutableStateOf<MapView?>(null)
@@ -510,8 +583,12 @@ fun LoraAprsScreen() {
 
                             val result =
                                 LivePackets.fetch(
-                                    lastPacketId
-                                )
+        if (!synchronized || livePauseMs > 10000L) {
+            0L
+        } else {
+            lastPacketId
+        }
+    )
 
 
                             /*
@@ -972,14 +1049,19 @@ fun LoraAprsScreen() {
 
                     Text(
                         text =
-                            "\n🇮🇹 Configurare l'indirizzo delle API del server LoRa APRS." +
-                            "\n🇬🇧 Configure the API address of the LoRa APRS server."
+                            "🇮🇹 Configurare l'indirizzo delle API del server LoRa APRS."
                     )
 
 
                     Text(
                         text =
-                            "\nMORE → SETTINGS"
+                            "🇬🇧 Configure the API address of the LoRa APRS server."
+                    )
+
+
+                    Text(
+                        text =
+                            "MORE → SETTINGS"
                     )
 
 
@@ -1272,6 +1354,12 @@ fun LoraAprsScreen() {
                 station =
                     station,
 
+                weather =
+                    selectedWeather,
+
+                weatherLoading =
+                    weatherLoading,
+
                 onClose = {
 
                     selectedStation =
@@ -1322,6 +1410,8 @@ fun LoraAprsScreen() {
 @Composable
 fun StationPanel(
     station: AprsStation,
+    weather: AprsWeather?,
+    weatherLoading: Boolean,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1627,6 +1717,222 @@ fun StationPanel(
 
             /*
              * =================================================
+             * DATI METEO
+             * =================================================
+             */
+
+            if (
+                weatherLoading ||
+                weather != null
+            ) {
+
+                HorizontalDivider(
+                    modifier =
+                        Modifier.padding(
+                            vertical =
+                                10.dp
+                        )
+                )
+
+
+                Text(
+                    text =
+                        "🌤 DATI METEO",
+
+                    style =
+                        MaterialTheme
+                            .typography
+                            .labelLarge
+                )
+
+
+                if (weatherLoading) {
+
+                    Text(
+                        text =
+                            "Caricamento...",
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .bodyMedium,
+
+                        modifier =
+                            Modifier.padding(
+                                top =
+                                    6.dp
+                            )
+                    )
+
+                } else if (weather != null) {
+
+
+                    weather.temperatureC?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🌡 Temperatura",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f °C",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.humidity?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "💧 Umidità",
+
+                            value =
+                                "$value %"
+                        )
+                    }
+
+
+                    weather.pressureHpa?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🔵 Pressione",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f hPa",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.windDirection?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🧭 Direzione vento",
+
+                            value =
+                                "$value°"
+                        )
+                    }
+
+
+                    weather.windSpeedKmh?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "💨 Vento",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f km/h",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.gustKmh?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🌬 Raffica",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f km/h",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.rainHourMm?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🌧 Pioggia 1 ora",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f mm",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.rain24Mm?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🌧 Pioggia 24 ore",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f mm",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    weather.rainMidnightMm?.let { value ->
+
+                        WeatherRow(
+                            label =
+                                "🌧 Pioggia oggi",
+
+                            value =
+                                String.format(
+                                    java.util.Locale.US,
+                                    "%.1f mm",
+                                    value
+                                )
+                        )
+                    }
+
+
+                    if (
+                        !weather.timestamp
+                            .isNullOrBlank()
+                    ) {
+
+                        Text(
+                            text =
+                                "Aggiornamento: " +
+                                formatApiTimestamp(
+                                    weather.timestamp
+                                ),
+
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .bodySmall,
+
+                            modifier =
+                                Modifier.padding(
+                                    top =
+                                        6.dp
+                                )
+                        )
+                    }
+                }
+            }
+
+
+            /*
+             * =================================================
              * VELOCITÀ
              * =================================================
              *
@@ -1731,6 +2037,53 @@ fun StationPanel(
 
 
 /* ============================================================
+   RIGA DATI METEO
+   ============================================================ */
+
+@Composable
+fun WeatherRow(
+    label: String,
+    value: String
+) {
+
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical =
+                        3.dp
+                ),
+
+        horizontalArrangement =
+            Arrangement.SpaceBetween
+    ) {
+
+        Text(
+            text =
+                label,
+
+            style =
+                MaterialTheme
+                    .typography
+                    .bodyMedium
+        )
+
+
+        Text(
+            text =
+                value,
+
+            style =
+                MaterialTheme
+                    .typography
+                    .titleMedium
+        )
+    }
+}
+
+
+/* ============================================================
    FORMATTA DATA
    ============================================================ */
 
@@ -1789,6 +2142,7 @@ fun formatApiTimestamp(
         value
     }
 }
+
 
 
 
