@@ -10,10 +10,10 @@ The project collects APRS packets received by one or more LoRa iGates, stores th
 
 The project was created in the spirit of amateur radio experimentation and sharing.
 
-> **Current release: v2.0**
+> **Current release: v2.1**
 >
-> Stable version released in August 2026.  
-> Future updates and major changes will be listed in the Version history below.
+> Updated November 2026 with 24-hour APRS weather history charts and SQLite WAL support.
+> See the Version history below for details.
 ---
 > ### Android app updates — August 2026
 
@@ -40,6 +40,15 @@ The installer enables WAL mode and installs the daily maintenance timer.
 ---
 
 ## Version history
+
+### v2.1 — November 2026
+
+- Added interactive 24-hour weather history charts for temperature, humidity and atmospheric pressure on station detail pages
+- Added a compact chart icon next to the weather section heading to expand or collapse the graphs
+- Connected measurements across irregular reporting intervals, with markers indicating actual received samples
+- Added automatic vertical-axis scaling, including stable readings and values near humidity limits
+- Enabled SQLite Write-Ahead Logging (WAL) for improved concurrent collector and API access
+- Documented daily database maintenance and configurable packet retention
 
 ### v2.0 — August 2026
 
@@ -88,6 +97,7 @@ Major update of **LoRa APRS Maps MQTT**.
 - Lines between directly received stations and the receiving iGate
 - Receiver statistics and dashboard
 - APRS weather data display when available
+- Interactive 24-hour temperature, humidity and pressure history charts
 - Web interface usable from desktop and mobile browsers
 
 ---
@@ -265,6 +275,8 @@ When APRS weather information is present in transmitted packets, the station pag
 - wind speed
 - wind gust
 - rain
+
+For stations reporting temperature, humidity and/or pressure, a small chart icon beside the weather heading opens the **last 24 hours of history**. The charts use actual packet timestamps, connect available measurements across gaps in transmission, and mark the received samples individually. Connecting points is only a visual aid: no intermediate measurements are generated.
 
 ---
 
