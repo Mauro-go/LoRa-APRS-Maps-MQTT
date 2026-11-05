@@ -1,8 +1,8 @@
 [Unit]
-Description=LoRa APRS Maps MQTT - Weekly Database Maintenance
+Description=LoRa APRS - Daily Database Maintenance
 
 [Timer]
-OnCalendar=Sun *-*-* 04:30:00
+OnCalendar=*-*-* 04:30:00
 Persistent=true
 Unit=lora-aprs-dbmaintenance.service
 

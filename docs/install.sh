@@ -32,7 +32,6 @@ SOURCE_DIR=""
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [[ -n "${SERVER_IP}" ]] || SERVER_IP="SERVER-IP"
 
-BACKUP_STAMP="$(date +%Y%m%d-%H%M%S)"
 
 cleanup() {
     rm -rf /tmp/lora-aprs-symbols-install 2>/dev/null || true
@@ -331,15 +330,27 @@ chmod 755 "${BACKEND_DIR}/collector.py"
 chmod 755 "${BACKEND_DIR}/api.py"
 chmod 755 "${APP_DIR}" "${BACKEND_DIR}" "${DATA_DIR}"
 
-if [[ -f "${BACKEND_DIR}/config.py" ]]; then
-    cp -a "${BACKEND_DIR}/config.py" \
-        "${BACKEND_DIR}/config.py.bak-${BACKUP_STAMP}"
-    echo "Existing config.py backed up."
-fi
 
 if [[ -f "${DATA_DIR}/lora-aprs.db" ]]; then
     echo "Existing SQLite database found: it will be preserved."
 fi
+
+# Enable WAL before starting the collector and API.
+echo "Configuring SQLite WAL..."
+python3 - "${DATA_DIR}/lora-aprs.db" <<'SQLITE_WAL'
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1], timeout=30)
+try:
+    conn.execute("PRAGMA busy_timeout=30000")
+    mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+    if mode.lower() != "wal":
+        raise RuntimeError(f"Unable to enable SQLite WAL: {mode}")
+    print(f"SQLite journal mode: {mode}")
+finally:
+    conn.close()
+SQLITE_WAL
 
 # ============================================================
 # Generate config.py

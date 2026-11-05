@@ -194,6 +194,16 @@ def save_packet(topic, packet):
     receiver = receiver_info["rx_id"]
     receiver_callsign = receiver_info["callsign"]
 
+    # RSSI opzionale nel quarto elemento del topic MQTT:
+    # lora_aprs/IV3SCP/CALLSIGN/-103
+    rssi = None
+
+    if len(parts) >= 4:
+        try:
+            rssi = int(parts[3])
+        except (TypeError, ValueError):
+            rssi = None
+
     if ">" in packet:
         callsign = packet.split(">", 1)[0].strip()
     elif len(parts) >= 3:
@@ -217,9 +227,10 @@ def save_packet(topic, packet):
             receiver_callsign,
             callsign,
             topic,
+            rssi,
             packet
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             timestamp,
@@ -227,6 +238,7 @@ def save_packet(topic, packet):
             receiver_callsign,
             callsign,
             topic,
+            rssi,
             packet,
         ),
     )

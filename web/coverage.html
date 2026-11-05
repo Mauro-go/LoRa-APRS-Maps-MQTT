@@ -1697,6 +1697,12 @@ function buildCoverageStationPopup(station) {
             ? Number(station.speed_kmh)
             : NaN;
 
+    const rssi =
+        station.rssi !== null &&
+        station.rssi !== undefined
+            ? Number(station.rssi)
+            : NaN;
+
     return `
         <div style="min-width:190px;max-width:320px;line-height:1.35">
 
@@ -1732,6 +1738,16 @@ function buildCoverageStationPopup(station) {
                             ${formatCoverageSpeedKmh(
                                 speed
                             )}
+                        </div>
+                    `
+                    : ""
+            }
+
+            ${
+                Number.isFinite(rssi)
+                    ? `
+                        <div>
+                            <b>RSSI:</b> ${Math.round(rssi)} dBm
                         </div>
                     `
                     : ""
@@ -1859,6 +1875,13 @@ function updateMap(packets) {
                     packet.speed_kmh !== undefined &&
                     packet.speed_kmh !== null
                         ? Number(packet.speed_kmh)
+                        : null,
+
+                rssi:
+                    packet.rssi !== undefined &&
+                    packet.rssi !== null &&
+                    Number.isFinite(Number(packet.rssi))
+                        ? Number(packet.rssi)
                         : null
 
             };

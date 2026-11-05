@@ -1,99 +1,76 @@
 #!/bin/bash
-
 set -euo pipefail
 
 DB="/opt/lora-aprs/data/lora-aprs.db"
-BACKUP_DIR="/opt/lora-aprs/db-backups"
-
 RETENTION_DAYS=7
-BACKUP_KEEP_DAYS=90
 
-STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DB="$BACKUP_DIR/lora-aprs-$STAMP.db"
+echo "===== LORA APRS - MANUTENZIONE ====="
+date
 
-echo
-echo "======================================================"
-echo " LoRa APRS Maps MQTT - DATABASE MAINTENANCE"
-echo "======================================================"
-echo
-
-if [ ! -f "$DB" ]; then
-    echo "ERRORE: database non trovato:"
-    echo "$DB"
+if [ ! -s "$DB" ]; then
+    echo "ERRORE: database assente o vuoto"
     exit 1
 fi
 
-mkdir -p "$BACKUP_DIR"
+python3 - "$DB" "$RETENTION_DAYS" <<'PY'
+import sqlite3
+import sys
+import time
+from datetime import datetime, timedelta, timezone
 
-echo "===== STATO PRIMA ====="
+db = sys.argv[1]
+days = int(sys.argv[2])
+cutoff = (datetime.now(timezone.utc) -
+          timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
-BEFORE_COUNT="$(sqlite3 "$DB" "SELECT COUNT(*) FROM packets;")"
+conn = sqlite3.connect(db, timeout=30)
+conn.execute("PRAGMA busy_timeout=30000")
 
-OLDEST="$(sqlite3 "$DB" "
-SELECT COALESCE(MIN(timestamp),'N/A')
-FROM packets;
-")"
+try:
+    before = conn.execute(
+        "SELECT COUNT(*) FROM packets"
+    ).fetchone()[0]
 
-NEWEST="$(sqlite3 "$DB" "
-SELECT COALESCE(MAX(timestamp),'N/A')
-FROM packets;
-")"
+    print(f"Pacchetti prima: {before}", flush=True)
 
-echo "Pacchetti   : $BEFORE_COUNT"
-echo "Più vecchio : $OLDEST"
-echo "Più recente : $NEWEST"
+    total = 0
 
-echo
-echo "===== BACKUP DATABASE ====="
+    while True:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
 
-sqlite3 "$DB" ".backup '$BACKUP_DB'"
+            cur = conn.execute("""
+                DELETE FROM packets
+                WHERE id IN (
+                    SELECT id FROM packets
+                    WHERE datetime(timestamp) < ?
+                    LIMIT 1000
+                )
+            """, (cutoff,))
 
-gzip "$BACKUP_DB"
+            deleted = cur.rowcount
+            conn.commit()
 
-echo "OK - backup creato:"
-echo "$BACKUP_DB.gz"
+            total += deleted
 
-echo
-echo "===== PULIZIA RECORD > ${RETENTION_DAYS} GIORNI ====="
+            if deleted == 0:
+                break
 
-sqlite3 "$DB" "
-DELETE FROM packets
-WHERE datetime(timestamp) < datetime('now','-${RETENTION_DAYS} days');
-"
+            time.sleep(0.1)
 
-AFTER_COUNT="$(sqlite3 "$DB" "SELECT COUNT(*) FROM packets;")"
+        except sqlite3.OperationalError as e:
+            conn.rollback()
+            print(f"Errore SQLite: {e}", flush=True)
+            raise
 
-DELETED=$(( BEFORE_COUNT - AFTER_COUNT ))
+    after = conn.execute(
+        "SELECT COUNT(*) FROM packets"
+    ).fetchone()[0]
 
-echo "Eliminati : $DELETED"
-echo "Rimasti   : $AFTER_COUNT"
+    print(f"Pacchetti eliminati: {total}")
+    print(f"Pacchetti rimasti: {after}")
+    print("Manutenzione completata")
 
-echo
-echo "===== INTEGRITY CHECK ====="
-
-CHECK="$(sqlite3 "$DB" "PRAGMA integrity_check;")"
-
-echo "$CHECK"
-
-if [ "$CHECK" != "ok" ]; then
-    echo "ERRORE: integrity_check fallito"
-    exit 1
-fi
-
-echo
-echo "===== PULIZIA BACKUP > ${BACKUP_KEEP_DAYS} GIORNI ====="
-
-find "$BACKUP_DIR" \
-    -type f \
-    -name 'lora-aprs-*.db.gz' \
-    -mtime +"$BACKUP_KEEP_DAYS" \
-    -print \
-    -delete
-
-echo
-echo "======================================================"
-echo " MANUTENZIONE COMPLETATA"
-echo " Retention DB : ${RETENTION_DAYS} giorni"
-echo " Backup       : $BACKUP_DB.gz"
-echo "======================================================"
-echo
+finally:
+    conn.close()
+PY

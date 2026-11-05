@@ -1873,6 +1873,228 @@ class Handler(BaseHTTPRequestHandler):
             })
 
 
+
+        # ====================================================
+        # METEO STAZIONE - STORICO DA SQLITE
+        # ====================================================
+
+        if parsed.path == "/api/weather":
+
+            import re
+
+            query = parse_qs(parsed.query)
+
+            callsign = (
+                query.get(
+                    "callsign",
+                    ["IV3SCP-10"]
+                )[0]
+                .strip()
+                .upper()
+            )
+
+            try:
+                hours = int(
+                    query.get(
+                        "hours",
+                        ["24"]
+                    )[0]
+                )
+            except Exception:
+                hours = 24
+
+            hours = min(
+                max(hours, 1),
+                168
+            )
+
+            cutoff = (
+                datetime.now(timezone.utc)
+                - timedelta(hours=hours)
+            ).isoformat()
+
+            conn = get_db()
+
+            rows = conn.execute("""
+                SELECT
+                    id,
+                    timestamp,
+                    receiver_callsign,
+                    packet,
+                    rssi
+                FROM packets
+                WHERE callsign = ?
+                  AND timestamp >= ?
+                ORDER BY timestamp ASC, id ASC
+            """, (
+                callsign,
+                cutoff
+            )).fetchall()
+
+            # Un solo punto per minuto.
+            # Se lo stesso beacon viene ricevuto più volte
+            # da IQ3GO, IV3SCP, ecc. l'ultimo del minuto vince.
+            points_by_minute = {}
+
+            temp_re = re.compile(
+                r't(-?\d{2,3})'
+            )
+
+            humidity_re = re.compile(
+                r'h(\d{2})'
+            )
+
+            pressure_re = re.compile(
+                r'b(\d{5})'
+            )
+
+            for row in rows:
+
+                packet = row["packet"] or ""
+
+                mt = temp_re.search(packet)
+                mh = humidity_re.search(packet)
+                mb = pressure_re.search(packet)
+
+                if not (
+                    mt and
+                    mh and
+                    mb
+                ):
+                    continue
+
+                try:
+                    temp_f = int(
+                        mt.group(1)
+                    )
+
+                    temperature = (
+                        temp_f - 32
+                    ) * 5.0 / 9.0
+
+                    humidity = int(
+                        mh.group(1)
+                    )
+
+                    # APRS: h00 = 100%
+                    if humidity == 0:
+                        humidity = 100
+
+                    pressure = (
+                        int(
+                            mb.group(1)
+                        ) / 10.0
+                    )
+
+                    ts = datetime.fromisoformat(
+                        row["timestamp"]
+                    )
+
+                except Exception:
+                    continue
+
+                minute_key = (
+                    ts
+                    .replace(
+                        second=0,
+                        microsecond=0
+                    )
+                    .isoformat()
+                )
+
+                points_by_minute[
+                    minute_key
+                ] = {
+                    "timestamp":
+                        row["timestamp"],
+
+                    "temperature":
+                        round(
+                            temperature,
+                            1
+                        ),
+
+                    "humidity":
+                        humidity,
+
+                    "pressure":
+                        round(
+                            pressure,
+                            1
+                        ),
+
+                    "receiver":
+                        row[
+                            "receiver_callsign"
+                        ],
+
+                    "rssi":
+                        row["rssi"],
+                }
+
+            data = list(
+                points_by_minute.values()
+            )
+
+            temperatures = [
+                point["temperature"]
+                for point in data
+            ]
+
+            latest = (
+                data[-1]
+                if data
+                else None
+            )
+
+            stats = None
+
+            if temperatures:
+
+                stats = {
+                    "min_temperature":
+                        round(
+                            min(temperatures),
+                            1
+                        ),
+
+                    "max_temperature":
+                        round(
+                            max(temperatures),
+                            1
+                        ),
+
+                    "avg_temperature":
+                        round(
+                            sum(temperatures)
+                            / len(temperatures),
+                            1
+                        ),
+                }
+
+            conn.close()
+
+            return self.send_json({
+                "callsign":
+                    callsign,
+
+                "hours":
+                    hours,
+
+                "count":
+                    len(data),
+
+                "latest":
+                    latest,
+
+                "stats":
+                    stats,
+
+                "data":
+                    data,
+            })
+
+
         if parsed.path == "/api/receivers":
 
             conn = get_db()

@@ -22,6 +22,23 @@ The project was created in the spirit of amateur radio experimentation and shari
 - Updated Android APK
 ---
 
+## Database maintenance — November 2026
+
+The database uses **SQLite WAL mode** to improve concurrent access
+between the MQTT collector and the HTTP API.
+
+Maintenance runs **daily at 04:30** through a systemd timer.
+
+- Packet retention: **7 days**
+- Old packets are deleted in batches of 1,000
+- No automatic database backups
+- No automatic source-code backup files
+- No automatic VACUUM
+
+The installer enables WAL mode and installs the daily maintenance timer.
+
+---
+
 ## Version history
 
 ### v2.0 — August 2026
@@ -43,7 +60,7 @@ Major update of **LoRa APRS Maps MQTT**.
 - Improved API structure and performance
 - Configuration separated from application code
 - Automatic SQLite database maintenance
-- Weekly database backup and cleanup using a systemd timer
+- Daily database cleanup without automatic backups
 - Configurable packet retention with automatic removal of old data
 
 ---
@@ -53,10 +70,10 @@ Major update of **LoRa APRS Maps MQTT**.
 - Reception of LoRa APRS packets via **MQTT**
 - Support for multiple LoRa APRS iGates
 - Local **SQLite** packet database
-- Automatic database backup and maintenance
+- Automatic database maintenance without backups
 - 7-day packet retention to keep the active database compact
-- Database backups retained for 90 days
-- Weekly maintenance through a systemd timer
+- SQLite WAL mode for concurrent database access
+- Daily maintenance through a systemd timer
 - Python HTTP API
 - Interactive APRS map based on **Leaflet / OpenStreetMap**
 - Real APRS symbols and overlays
@@ -108,7 +125,7 @@ The MQTT collector subscribes to the configured topics and stores the received p
 
 The API reads the database, decodes APRS information and provides the data required by the web interface.
 
-A weekly database maintenance task automatically creates a compressed backup of the SQLite database before removing packet records older than 7 days. Database backups are retained for 90 days. The maintenance task is managed by a systemd timer.
+A daily systemd timer runs database maintenance at 04:30. Packets older than 7 days are removed in batches of 1,000. SQLite uses WAL mode for concurrent access. No automatic backups are created.
 
 ---
 
@@ -278,7 +295,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The automatic installer configures the required Debian packages, backend, web interface, Apache reverse proxy, systemd services and weekly database maintenance.
+The automatic installer configures the required Debian packages, backend, web interface, Apache reverse proxy, systemd services and daily database maintenance.
 
 The installation process includes:
 
@@ -290,10 +307,10 @@ The installation process includes:
 6. installing the collector and API services;
 7. installing the web interface and APRS symbols;
 8. configuring Apache;
-9. installing and enabling automatic weekly database maintenance;
+9. installing and enabling automatic daily database maintenance;
 10. running final service and connectivity checks.
 
-The database maintenance system creates a compressed backup before cleanup, keeps the active packet history limited to 7 days and retains database backups for 90 days.
+Database maintenance runs daily at 04:30, retains packets for 7 days and does not create automatic backups.
 
 Italian documentation will be available in:
 

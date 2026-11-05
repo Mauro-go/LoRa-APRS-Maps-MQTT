@@ -1110,7 +1110,8 @@ function makeV2SyntheticPacket(
     symbolCode,
     packetId,
     info,
-    speedKmh
+    speedKmh,
+    rssi
 ) {
 
     const call =
@@ -1190,6 +1191,13 @@ function makeV2SyntheticPacket(
             speedKmh !== undefined &&
             speedKmh !== null
                 ? Number(speedKmh)
+                : null,
+
+        rssi:
+            rssi !== undefined &&
+            rssi !== null &&
+            Number.isFinite(Number(rssi))
+                ? Number(rssi)
                 : null,
 
         /*
@@ -1450,7 +1458,12 @@ async function loadPackets() {
 
                     station.info,
 
-                    station.speed_kmh
+                    station.speed_kmh,
+
+                    reception &&
+                    reception.rssi !== undefined
+                        ? reception.rssi
+                        : station.rssi
                 )
             );
         }
@@ -1788,6 +1801,13 @@ function buildStationHoverPopup(station) {
             ? Number(speedValue)
             : NaN;
 
+    const rssi =
+        latestPacket &&
+        latestPacket.rssi !== undefined &&
+        latestPacket.rssi !== null
+            ? Number(latestPacket.rssi)
+            : NaN;
+
     return `
         <div style="min-width:190px;max-width:320px;line-height:1.35">
 
@@ -1818,6 +1838,16 @@ function buildStationHoverPopup(station) {
                                 "Speed:"
                             )}</b>
                             ${formatSpeedKmh(speed)}
+                        </div>
+                    `
+                    : ""
+            }
+
+            ${
+                Number.isFinite(rssi)
+                    ? `
+                        <div>
+                            <b>RSSI:</b> ${Math.round(rssi)} dBm
                         </div>
                     `
                     : ""
