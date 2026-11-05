@@ -365,6 +365,21 @@ html[data-lang="en"] .lang-en { display: inline !important; }
     margin-left: 8px;
 }
 
+
+.wx-toggle {background:#26374b;color:#e5efff;border:1px solid #496580;border-radius:7px;padding:10px 14px;cursor:pointer;margin:4px 0 12px;font-size:13px}
+.wx-toggle:hover {background:#344a65}
+.wx-history {background:#1d1d1d;border-radius:8px;padding:14px;margin-bottom:12px}
+.wx-history[hidden] {display:none}
+.wx-plot {background:#161616;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:12px}
+.wx-plot h3 {margin:0 0 8px;font-size:14px}
+.wx-plot svg {width:100%;height:auto;display:block}
+.wx-plot-note {color:#aaa;font-size:11px;margin-top:6px}
+
+
+/* Piccola icona accanto al titolo meteo */
+.weather-title .wx-toggle { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; min-width:20px; margin:0 0 0 3px; padding:0; border:0; border-radius:3px; background:transparent; color:#7bbcff; font-size:15px; line-height:1; cursor:pointer; }
+.weather-title .wx-toggle:hover, .weather-title .wx-toggle:focus-visible { background:#293447; outline:none; }
+
 </style>
 
 </head>
@@ -1340,6 +1355,8 @@ function renderWeather(weather) {
             </span>
 
             ${t("Dati meteo", "Weather data")}
+            <button id="wx-toggle" class="wx-toggle" type="button" aria-controls="wx-history" aria-expanded="false"
+                title="${t("Storico meteo - ultime 24 ore", "Weather history - last 24 hours")}" aria-label="${t("Mostra o nascondi lo storico meteo", "Show or hide weather history")}">📈</button>
 
         </h2>
 
@@ -1490,6 +1507,67 @@ function renderWeather(weather) {
     return html;
 }
 
+
+
+let wxHistoryCache = null;
+let wxHistoryVisible = false;
+
+function drawWxPlot(title, field, unit, color, data) {
+    const points = data.map(p => ({time:Date.parse(p.timestamp), value:Number(p[field])}))
+        .filter(p => Number.isFinite(p.time) && p[field] !== null && Number.isFinite(p.value))
+        .sort((a,b) => a.time-b.time);
+    if (!points.length) return `<div class="wx-plot"><h3>${title}</h3>${t("Nessun dato", "No data")}</div>`;
+    const W=900,H=200,L=58,R=15,T=16,B=35;
+    const end=Date.now(), start=end-86400000;
+    const vals=points.map(p=>p.value);
+    let lo=Math.min(...vals), hi=Math.max(...vals);
+    const pad=Math.max((hi-lo)*.1, field==="humidity"?2:(field==="pressure"?0.5:0.5));
+    lo-=pad;hi+=pad;
+    if(field==="humidity"){lo=Math.max(0,lo);hi=Math.min(100,hi);if(hi-lo<4){lo=Math.max(0,lo-2);hi=Math.min(100,hi+2);}}
+    if(hi<=lo)hi=lo+1;
+    const x=ts=>L+(ts-start)/(end-start)*(W-L-R);
+    const y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+    const fmt=v=>v.toFixed(field==="humidity"?0:1);
+    let grid="", labels="";
+    for(let i=0;i<5;i++){
+        const val=lo+(hi-lo)*i/4, yy=y(val);
+        grid+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#363636"/><text x="${L-8}" y="${yy+4}" text-anchor="end" fill="#aaa" font-size="12">${fmt(val)}</text>`;
+        const ts=start+(end-start)*i/4;
+        const tm=new Date(ts).toLocaleTimeString(currentLanguage==="en"?"en-GB":"it-IT",{hour:"2-digit",minute:"2-digit"});
+        labels+=`<text x="${x(ts)}" y="${H-8}" text-anchor="middle" fill="#aaa" font-size="12">${tm}</text>`;
+    }
+    let path="", prev=null;
+    for(const p of points){
+        path+=(prev===null?"M":"L")+x(p.time).toFixed(1)+","+y(p.value).toFixed(1)+" ";
+        prev=p.time;
+    }
+    return `<div class="wx-plot"><h3>${title}</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${grid}${labels}<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${points.map(p=>`<circle cx="${x(p.time).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3" fill="${color}"/>`).join("")}</svg><div class="wx-plot-note">${t("Min","Min")}: ${fmt(Math.min(...vals))} ${unit} · ${t("Max","Max")}: ${fmt(Math.max(...vals))} ${unit} · ${points.length} ${t("campioni","samples")}</div></div>`;
+}
+async function toggleWeatherHistory(){
+    const panel=document.getElementById("wx-history");
+    const button=document.getElementById("wx-toggle");
+    if(!panel || !button)return;
+    wxHistoryVisible=!wxHistoryVisible;
+    panel.hidden=!wxHistoryVisible;
+    button.setAttribute("aria-expanded",String(wxHistoryVisible));
+    button.title=wxHistoryVisible?t("Nascondi storico meteo","Hide weather history"):t("Storico meteo - ultime 24 ore","Weather history - last 24 hours");
+    if(!wxHistoryVisible)return;
+    panel.textContent=t("Caricamento storico meteo...","Loading weather history...");
+    try{
+        if(!wxHistoryCache){
+            const response=await fetch(API+"/weather?callsign="+encodeURIComponent(callsign)+"&hours=24",{cache:"no-store"});
+            if(!response.ok)throw Error("HTTP "+response.status);
+            const payload=await response.json();
+            wxHistoryCache=Array.isArray(payload.data)?payload.data:[];
+        }
+        if(!wxHistoryVisible)return;
+        panel.innerHTML=wxHistoryCache.length?[
+            drawWxPlot(t("🌡️ Temperatura","🌡️ Temperature"),"temperature","°C","#ffad69",wxHistoryCache),
+            drawWxPlot(t("💧 Umidità","💧 Humidity"),"humidity","%","#6ab8ff",wxHistoryCache),
+            drawWxPlot(t("🔵 Pressione","🔵 Pressure"),"pressure","hPa","#a5df86",wxHistoryCache)
+        ].join(""):t("Nessun dato nelle ultime 24 ore.","No data in the last 24 hours.");
+    }catch(error){panel.textContent=t("Errore nel caricamento dello storico: ","History loading error: ")+error.message;}
+}
 
 /* ============================================================
    POSIZIONE
@@ -1986,6 +2064,10 @@ async function loadStation() {
             ${renderWeather(
                 latestWeather
             )}
+            ${latestWeather ? `
+                <div id="wx-history" class="wx-history" hidden></div>
+            ` : ""}
+
 
 
             <!-- =============================================
@@ -2177,6 +2259,9 @@ if (languageSelect) {
 }
 
 
+document.addEventListener("click", e => {
+    if (e.target.closest("#wx-toggle")) toggleWeatherHistory();
+});
 loadStation();
 
 </script>
